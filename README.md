@@ -1,42 +1,92 @@
+# File: ComfyUI_Automation/README.md
+
 # ComfyUI Automation Node Pack
 
-This is a collection of nodes for automating workflows in ComfyUI.
+This is a collection of custom nodes for ComfyUI designed to automate and streamline creative workflows by fetching data from web sources like RSS feeds and web pages.
 
 ## Installation
 
 1.  Navigate to your `ComfyUI/custom_nodes/` directory.
-2.  Clone this repository:
+2.  Clone this repository into that directory:
     ```bash
-    git clone <your-repo-url-here> ComfyUI_Automation
+    git clone <your-repository-url-here> ComfyUI_Automation
     ```
-    (Or just copy the `ComfyUI_Automation` folder here).
-3.  Restart ComfyUI. It should automatically detect the `requirements.txt` and install the necessary `feedparser` library. If not, you can install it manually:
+    (Or, if you downloaded the files manually, just place the `ComfyUI_Automation` folder here).
+3.  Restart ComfyUI. The ComfyUI-Manager (or the terminal) should detect the `requirements.txt` file and prompt you to install the necessary dependencies (`feedparser`, `requests`, `beautifulsoup4`, `Pillow`).
+4.  If the dependencies are not installed automatically, you can install them manually by opening a terminal/command prompt, navigating to your ComfyUI installation, and running:
     ```bash
     pip install -r ComfyUI/custom_nodes/ComfyUI_Automation/requirements.txt
     ```
-4.  Restart ComfyUI one more time.
+5.  Restart ComfyUI one more time after the dependencies are installed. Your new nodes will appear in the "Automation" category when you right-click the canvas.
+
+---
 
 ## Nodes
 
-### 📰 RSS Feed Reader
+The nodes are organized into sub-categories for ease of use.
 
-This node fetches data from one or more RSS feeds and provides the content as strings or synchronized batches.
+### Automation/RSS
 
-#### Inputs
+#### 📰 RSS Feed Reader
+Fetches and parses entries from one or more RSS feeds.
 
--   **`links`**: A multiline text box for one or more RSS feed URLs, each on a new line.
--   **`max_entries`**: An integer to limit how many of the latest entries to fetch from *each* feed.
--   **`batch_source`**: A dropdown to select what content to use for the `content_batch` output. Options are `title`, `summary`, or `link`.
--   **`output_mode`**: A dropdown to control the format of the outputs.
-    -   `Concatenated String`: The first two outputs are single, large strings.
-    -   `Batch Output`: All three outputs are batches (lists), synchronized by entry.
+*   **Inputs**:
+    *   `links`: A multiline text box for one or more RSS feed URLs.
+    *   `max_entries`: The maximum number of entries to fetch from *each* feed.
+    *   `skip_entries`: Skips the first N entries. Useful for paging through a feed.
+    *   `batch_source_1` / `batch_source_2`: Select the content (`title`, `summary`, or `link`) for the two independent batch outputs.
+    *   `output_mode`: `Batch Output` returns `raw_output` and `formatted_text` as batches. `Concatenated String` returns them as single large strings.
+*   **Outputs**:
+    *   `raw_output`: The full, raw JSON data for each entry.
+    *   `formatted_text`: A human-readable summary of each entry.
+    *   `content_batch_1` / `content_batch_2`: Batches of strings containing the content specified by the `batch_source` inputs.
 
-#### Outputs
+### Automation/Web
 
--   **`raw_text_output`**:
-    -   If `output_mode` is `Concatenated String`: A single string containing a simple concatenation of the titles and summaries of all fetched entries.
-    -   If `output_mode` is `Batch Output`: A batch where each item is the raw text for a single RSS entry.
--   **`formatted_text_output`**:
-    -   If `output_mode` is `Concatenated String`: A single, more readable string with labels for Title, Link, and Summary for all entries.
-    -   If `output_mode` is `Batch Output`: A batch where each item is the fully formatted text block for a single RSS entry.
--   **`content_batch`**: (This is always a batch). It contains the content specified by the `batch_source` input. It can be connected to any input that accepts a batch of strings (like a prompt input).
+#### 🕸️ Simple Web Scraper
+A basic scraper that grabs all text and all image links from one or more URLs.
+
+*   **Inputs**:
+    *   `url`: A single URL string or a batch of URL strings.
+*   **Outputs**:
+    *   `extracted_texts`: A batch of strings, where each string is the entire text content of a scraped page.
+    *   `image_urls`: A batch containing every image URL found across all scraped pages.
+
+#### 🎯 Targeted Web Scraper
+A powerful scraper that extracts content from specific parts of a page using CSS selectors, with the ability to ignore unwanted elements.
+
+*   **Inputs**:
+    *   `url`: A single URL string or a batch of URL strings.
+    *   `selectors`: The CSS selectors for the content you **want** to extract (e.g., `.article-body`, `h1`).
+    *   `ignore_selectors`: The CSS selectors for content you want to **remove before** extraction (e.g., `nav`, `footer`, `.ads`).
+*   **Outputs**:
+    *   `extracted_text`: A batch of strings containing the text from the targeted elements.
+    *   `image_urls`: A batch of image URLs found *only within* the targeted elements.
+
+### Automation/Image
+
+#### 🖼️ Load Image From URL
+Downloads one or more images from URLs and prepares them as a standard ComfyUI `IMAGE` batch.
+
+*   **Inputs**:
+    *   `image_url`: A single URL string or a batch of URL strings (e.g., from a scraper node).
+    *   `resize_mode`: Determines how to handle images of different sizes.
+        *   `Don't Resize (First Image Only)`: **(Not Batch Compatible)** Loads the first valid image at its original resolution and stops.
+        *   `Stretch`: Forces all images to the target size, ignoring aspect ratio.
+        *   `Crop (Center)`: Resizes and crops to fill the target size, preserving aspect ratio.
+        *   `Pad (Black)`: Resizes to fit inside the target size, preserving aspect ratio and adding black bars.
+    *   `target_width` / `target_height`: The uniform dimensions for the output image batch.
+*   **Outputs**:
+    *   `IMAGE`: A standard ComfyUI image batch tensor.
+    *   `MASK`: A corresponding mask batch tensor.
+
+### Automation/Utils
+
+#### 📜 Batch to String
+A utility node to convert a list/batch of strings into a single string. This is the perfect "bridge" to connect batch outputs to nodes that expect a single string input.
+
+*   **Inputs**:
+    *   `string_batch`: A batch of strings (e.g., from the `extracted_text` output of a scraper).
+    *   `separator`: The characters to place between each string when joining them. Default is `\n\n` (a double newline).
+*   **Outputs**:
+    *   `string`: A single string containing all the items from the batch, joined by the separator.
