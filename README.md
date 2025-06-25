@@ -1,5 +1,3 @@
-# File: ComfyUI_Automation/README.md
-
 # ComfyUI Automation Node Pack
 
 This is a collection of nodes for automating workflows in ComfyUI.

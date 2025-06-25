@@ -1,3 +1,1 @@
-# File: ComfyUI_Automation/requirements.txt
-
 feedparser

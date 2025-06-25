@@ -1,5 +1,3 @@
-# File: ComfyUI_Automation/nodes.py
-
 import feedparser
 import re
 

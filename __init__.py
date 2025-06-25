@@ -1,5 +1,3 @@
-# File: ComfyUI_Automation/__init__.py
-
 """
 @author: Your Name
 @title: ComfyUI Automation
