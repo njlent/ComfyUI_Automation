@@ -47,6 +47,6 @@ __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
 
 print("----------------------------------")
 print("### ComfyUI Automation         ###")
-print("### Developed by [mimikry.ai   ###")
+print("### Developed by [mimikry.ai]  ###")
 print("### Version \033[34mDEV\033[0m                ###")
 print("----------------------------------")
