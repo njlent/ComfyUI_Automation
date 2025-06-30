@@ -174,3 +174,139 @@ class StringBatchToString:
         if isinstance(string_batch, list): return (processed_separator.join(string_batch),)
         elif isinstance(string_batch, str): return (string_batch,)
         else: return ("",)
+
+class SRTParser:
+    """
+    Parses a string in SRT (SubRip Subtitle) format and extracts the data for each entry.
+    This version can also detect and handle silent pauses between subtitle entries.
+    """
+    CATEGORY = "Automation/Video"
+    
+    RETURN_TYPES = ("STRING", "INT", "INT", "INT")
+    RETURN_NAMES = ("text_batch", "start_ms_batch", "end_ms_batch", "duration_ms_batch")
+    FUNCTION = "parse_srt"
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "srt_content": ("STRING", {"multiline": True, "dynamicPrompts": False, "tooltip": "Paste the entire content of your SRT file here."}),
+                # --- NEW INPUT WIDGET ---
+                "handle_pauses": (["Include Pauses", "Ignore Pauses"], {"default": "Include Pauses", "tooltip": "Determines how to handle silent gaps between subtitle entries. 'Include Pauses' adds blank text entries to maintain timing."}),
+            }
+        }
+
+    def srt_time_to_ms(self, time_str):
+        """Converts an SRT time string (HH:MM:SS,ms) to total milliseconds."""
+        parts = re.split('[:,]', time_str)
+        h, m, s, ms = map(int, parts)
+        return (h * 3600 + m * 60 + s) * 1000 + ms
+
+    def parse_srt(self, srt_content, handle_pauses):
+        pattern = re.compile(
+            r'(\d+)\n'
+            r'(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})\n'
+            r'([\s\S]*?(?=\n\n|\Z))'
+        )
+        
+        text_batch = []
+        start_ms_batch = []
+        end_ms_batch = []
+        duration_ms_batch = []
+        
+        matches = list(pattern.finditer(srt_content)) # Use list to easily access next item
+        
+        last_end_time_ms = 0
+        
+        for i, match in enumerate(matches):
+            text = match.group(4).strip().replace('\n', ' ')
+            start_time_str = match.group(2)
+            end_time_str = match.group(3)
+            
+            start_ms = self.srt_time_to_ms(start_time_str)
+            end_ms = self.srt_time_to_ms(end_time_str)
+            duration_ms = end_ms - start_ms
+
+            # --- NEW PAUSE DETECTION LOGIC ---
+            if handle_pauses == "Include Pauses" and start_ms > last_end_time_ms:
+                pause_duration = start_ms - last_end_time_ms
+                if pause_duration > 50: # Only add pauses longer than 50ms to avoid tiny gaps
+                    print(f"ComfyUI_Automation: Detected a pause of {pause_duration}ms.")
+                    # Add the pause entry
+                    text_batch.append("") # Blank text for the pause
+                    start_ms_batch.append(last_end_time_ms)
+                    end_ms_batch.append(start_ms)
+                    duration_ms_batch.append(pause_duration)
+
+            # Add the actual subtitle entry
+            text_batch.append(text)
+            start_ms_batch.append(start_ms)
+            end_ms_batch.append(end_ms)
+            duration_ms_batch.append(duration_ms)
+            
+            last_end_time_ms = end_ms
+
+        print(f"ComfyUI_Automation: Parsed {len(text_batch)} total entries (including pauses if enabled).")
+        return (text_batch, start_ms_batch, end_ms_batch, duration_ms_batch)
+
+
+class SRTSceneGenerator:
+    """
+    Generates a continuous batch of blank images based on timing data from an SRT file.
+    It also outputs indexing information to help place content in the correct scenes.
+    """
+    CATEGORY = "Automation/Video"
+
+    RETURN_TYPES = ("IMAGE", "INT", "INT")
+    RETURN_NAMES = ("image_timeline", "start_frame_indices", "frame_counts")
+    FUNCTION = "generate_scenes"
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "duration_ms_batch": ("INT", {"forceInput": True, "tooltip": "Connect the duration_ms_batch output from the SRT Parser node here."}),
+                "fps": ("INT", {"default": 24, "min": 1, "max": 120, "step": 1, "tooltip": "Frames per second for the final video. This determines how many frames are created for each duration."}),
+                "width": ("INT", {"default": 512, "min": 64, "max": 8192, "step": 8}),
+                "height": ("INT", {"default": 512, "min": 64, "max": 8192, "step": 8}),
+            }
+        }
+
+    def generate_scenes(self, duration_ms_batch, fps, width, height):
+        if not isinstance(duration_ms_batch, list) or not duration_ms_batch:
+            print("ComfyUI_Automation: SRTSceneGenerator received no valid duration batch.")
+            return (torch.zeros((1, height, width, 3)), [0], [0])
+
+        image_batch_list = []
+        start_frame_indices = []
+        frame_counts = []
+        current_frame_index = 0
+
+        for duration_ms in duration_ms_batch:
+            # Calculate the number of frames for this scene
+            num_frames = round((duration_ms / 1000.0) * fps)
+            
+            if num_frames <= 0:
+                continue # Skip scenes that are too short to be a single frame
+
+            # Create a single black frame
+            black_frame = torch.zeros((1, height, width, 3), dtype=torch.float32)
+            
+            # Repeat the black frame to create the scene's image batch
+            scene_batch = black_frame.repeat(num_frames, 1, 1, 1)
+            
+            image_batch_list.append(scene_batch)
+            start_frame_indices.append(current_frame_index)
+            frame_counts.append(num_frames)
+            
+            current_frame_index += num_frames
+        
+        if not image_batch_list:
+            print("ComfyUI_Automation: All SRT durations were too short to generate frames.")
+            return (torch.zeros((1, height, width, 3)), [0], [0])
+
+        # Concatenate all scene batches into a single continuous timeline
+        final_video_batch = torch.cat(image_batch_list, dim=0)
+
+        print(f"ComfyUI_Automation: Generated a timeline of {current_frame_index} frames across {len(frame_counts)} scenes.")
+        return (final_video_batch, start_frame_indices, frame_counts)
