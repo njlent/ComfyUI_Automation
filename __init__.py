@@ -4,8 +4,11 @@ from .nodes import (
     TargetedWebScraper, 
     LoadImageFromURL,
     StringBatchToString,
-    SRTParser,             # Add new node
-    SRTSceneGenerator      # Add new node
+    SRTParser,
+    SRTSceneGenerator,
+    TextOnImage,
+    ImageBatchRepeater,
+    LayeredImageProcessor # Add the new node
 )
 
 # A dictionary that maps node CLS names to node display names
@@ -16,7 +19,10 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "LoadImageFromURL": "🖼️ Load Image From URL",
     "StringBatchToString": "📜 Batch to String",
     "SRTParser": "🎬 SRT Parser",
-    "SRTSceneGenerator": "🎞️ SRT Scene Generator"
+    "SRTSceneGenerator": "🎞️ SRT Scene Generator",
+    "TextOnImage": "✍️ Text on Image",
+    "ImageBatchRepeater": "🔂 Image Batch Repeater",
+    "LayeredImageProcessor": "🖼️ Layered Image Processor" # Add the display name
 }
 
 # A dictionary that maps node CLS names to the node's class
@@ -27,7 +33,10 @@ NODE_CLASS_MAPPINGS = {
     "LoadImageFromURL": LoadImageFromURL,
     "StringBatchToString": StringBatchToString,
     "SRTParser": SRTParser,
-    "SRTSceneGenerator": SRTSceneGenerator
+    "SRTSceneGenerator": SRTSceneGenerator,
+    "TextOnImage": TextOnImage,
+    "ImageBatchRepeater": ImageBatchRepeater,
+    "LayeredImageProcessor": LayeredImageProcessor # Add the class mapping
 }
 
 # A friendly message indicating that the nodes have been loaded
