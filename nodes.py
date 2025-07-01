@@ -574,7 +574,7 @@ class AudioReactivePaster:
     """
     Pastes an overlay image/timeline onto a background video/image batch, with its
     position animated by the amplitude of a single audio signal. This version is
-    memory-efficient and works directly on the input tensor to avoid allocation errors.
+    memory-efficient and uses the correct paste logic with masks.
     """
     CATEGORY = "Automation/Video"
     RETURN_TYPES = ("IMAGE", "IMAGE")
@@ -616,17 +616,14 @@ class AudioReactivePaster:
 
     def process(self, background_image, overlay_image, overlay_mask, audio, fps, size, horizontal_align, vertical_align, margin, x_offset, y_offset, x_strength, y_strength, smoothing_method, gaussian_sigma, ema_span, sma_window):
         
-        # Debatching logic for safety
         if isinstance(background_image, list): background_image = background_image[0]
         if isinstance(overlay_image, list): overlay_image = overlay_image[0]
         if isinstance(overlay_mask, list): overlay_mask = overlay_mask[0]
         if isinstance(audio, list): audio = audio[0]
 
-        # --- THE CORRECT MEMORY FIX ---
-        # Do NOT clone the tensor. Work directly on the input tensor.
+        # Work directly on the input tensor to be memory-efficient
         video_timeline = background_image
         num_video_frames = video_timeline.shape[0]
-        
         num_overlay_frames = overlay_image.shape[0]
 
         print(f"AudioReactivePaster: Processing a {num_video_frames}-frame timeline.")
@@ -634,7 +631,7 @@ class AudioReactivePaster:
         if num_overlay_frames > 1 and num_overlay_frames != num_video_frames:
             print(f"AudioReactivePaster: Warning! Overlay timeline ({num_overlay_frames} frames) does not match background timeline ({num_video_frames} frames).")
 
-        # Audio processing logic is unchanged
+        # Audio processing logic
         sample_rate, waveform = audio['sample_rate'], audio['waveform'][0]
         if waveform.shape[0] > 1: waveform = torch.mean(waveform, dim=0, keepdim=True)
         total_audio_samples = waveform.shape[1]; samples_per_frame = int(sample_rate / fps)
@@ -642,18 +639,12 @@ class AudioReactivePaster:
         if total_audio_samples < samples_per_frame:
             print("AudioReactivePaster: FATAL ERROR - Audio clip is shorter than a single video frame."); return (video_timeline, torch.zeros((1, 100, num_video_frames, 3)))
             
-        raw_amplitudes = []
-        for i in range(num_video_frames):
-            start_sample = int(i / fps * sample_rate)
-            if start_sample >= total_audio_samples: raw_amplitudes.append(0); continue
-            end_sample = start_sample + samples_per_frame
-            chunk = waveform[0, start_sample:end_sample]
-            raw_amplitudes.append(torch.max(torch.abs(chunk)).item() if chunk.numel() > 0 else 0)
-
+        raw_amplitudes = [torch.max(torch.abs(waveform[0, int(i / fps * sample_rate) : int(i / fps * sample_rate) + samples_per_frame])).item() if int(i / fps * sample_rate) < total_audio_samples else 0 for i in range(num_video_frames)]
         max_amp = max(raw_amplitudes) if raw_amplitudes else 1.0; max_amp = 1.0 if max_amp == 0 else max_amp
         norm_amps = [a / max_amp for a in raw_amplitudes]
         final_amps = self.smooth_data(norm_amps, smoothing_method, gaussian_sigma, ema_span, sma_window)
         
+        # Visualization
         viz_img = Image.new('RGB', (num_video_frames, 100), 'white'); viz_draw = ImageDraw.Draw(viz_img)
         for i, amp in enumerate(final_amps): viz_draw.line([(i, 99), (i, 99 - int(amp * 99))], fill='black', width=1)
         viz_tensor = self._pil_to_tensor_single(viz_img).unsqueeze(0)
@@ -663,7 +654,8 @@ class AudioReactivePaster:
         # Process frame by frame, modifying the input tensor in-place
         for i in range(num_video_frames):
             bg_tensor_frame = video_timeline[i]
-            bg_pil = self._tensor_to_pil(bg_tensor_frame).convert("RGBA")
+            # No need to convert background to RGBA, paste handles it.
+            bg_pil = self._tensor_to_pil(bg_tensor_frame)
             amp = final_amps[i]
             
             overlay_idx = i % num_overlay_frames
@@ -691,9 +683,13 @@ class AudioReactivePaster:
             
             fx = int(x + x_offset + (amp * x_strength)); fy = int(y + y_offset + (amp * y_strength))
             
-            # Composite and write back to the original tensor
-            composited_image = Image.alpha_composite(bg_pil, pil_overlay.convert("RGBA").transform(bg_pil.size, Image.Transform.AFFINE, (1, 0, fx, 0, 1, fy), fillcolor=(0,0,0,0)))
-            video_timeline[i] = self._pil_to_tensor_single(composited_image.convert("RGB"))
+            # --- START OF FIX: Reverted to the correct paste method ---
+            # This is the original, correct logic that uses the mask properly.
+            bg_pil.paste(pil_overlay, (fx, fy), mask=pil_mask)
+            # --- END OF FIX ---
+            
+            # Write the modified frame back to the original tensor
+            video_timeline[i] = self._pil_to_tensor_single(bg_pil)
 
         # Return the modified input tensor and the visualization
         return (video_timeline, viz_tensor)
@@ -794,9 +790,14 @@ class AnimateTextOnImage:
         current_frame = 0
         durations = text_durations if (text_durations and isinstance(text_durations, list)) else [num_bg_frames]
         
-        # This temporary draw object is used for all text wrapping calculations.
         temp_draw = ImageDraw.Draw(Image.new('RGBA', (1,1)))
         
+        # --- START OF FIX: Calculate max line height ---
+        # We use a string with a high ascender and a low descender to find the max possible line height.
+        max_height_bbox = temp_draw.textbbox((0,0), "hg", font=font)
+        max_line_height = max_height_bbox[3] - max_height_bbox[1]
+        # --- END OF FIX ---
+
         for i, text_item in enumerate(text_list):
             if i >= len(durations): break
             display_duration = durations[i]
@@ -838,14 +839,9 @@ class AnimateTextOnImage:
                 full_text_layout = text_info["full_text_layout"]
                 current_text = text_info["draw_text"]
                 
-                # We need a draw object to calculate the multi-line bounding box correctly.
                 temp_draw_for_bbox = ImageDraw.Draw(bg_pil)
-
-                # --- START OF FIX ---
-                # Use temp_draw_for_bbox.textbbox() for accurate multi-line height.
                 full_bbox = temp_draw_for_bbox.textbbox((0,0), full_text_layout, font=font)
                 text_width, text_height = full_bbox[2] - full_bbox[0], full_bbox[3] - full_bbox[1]
-                # --- END OF FIX ---
                 
                 if horizontal_align == "left": x = margin
                 elif horizontal_align == "right": x = canvas_w - text_width - margin
@@ -860,33 +856,65 @@ class AnimateTextOnImage:
                 text_layer = Image.new('RGBA', bg_pil.size, (0, 0, 0, 0))
                 draw = ImageDraw.Draw(text_layer)
 
-                if style == "Background Block":
-                    # --- START OF FIX ---
-                    # Also use the more accurate textbbox for the current text block.
-                    current_bbox = temp_draw_for_bbox.textbbox((0,0), current_text, font=font)
-                    bg_x0 = final_x + current_bbox[0] - bg_padding
-                    bg_y0 = final_y + current_bbox[1] - bg_padding
-                    bg_x1 = final_x + current_bbox[2] + bg_padding
-                    bg_y1 = final_y + current_bbox[3] + bg_padding
-                    # --- END OF FIX ---
-                    draw.rectangle([bg_x0, bg_y0, bg_x1, bg_y1], fill=style_color_tuple)
-                
-                elif style == "Drop Shadow":
-                    shadow_layer = Image.new('RGBA', bg_pil.size, (0, 0, 0, 0))
-                    shadow_draw = ImageDraw.Draw(shadow_layer)
-                    shadow_draw.text((final_x + shadow_x_offset, final_y + shadow_y_offset), current_text, font=font, fill=style_color_tuple)
-                    if shadow_blur_radius > 0:
-                        shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=shadow_blur_radius))
-                    text_layer = Image.alpha_composite(text_layer, shadow_layer)
-                    draw = ImageDraw.Draw(text_layer)
+                lines = current_text.split('\n')
+                line_y = final_y
 
-                draw.text((final_x, final_y), current_text, font=font, fill=main_color_tuple)
+                if style == "Background Block" or style == "Drop Shadow":
+                    for line in lines:
+                        line_bbox = temp_draw_for_bbox.textbbox((0,0), line, font=font)
+                        line_width = line_bbox[2] - line_bbox[0]
+                        
+                        line_x_offset = 0
+                        if horizontal_align == "center":
+                           line_x_offset = (text_width - line_width) / 2
+                        elif horizontal_align == "right":
+                           line_x_offset = text_width - line_width
+                        line_x = final_x + line_x_offset
+
+                        if style == "Background Block":
+                            # --- START OF FIX: Use max_line_height for consistent block height ---
+                            bg_x0 = line_x - bg_padding
+                            bg_y0 = line_y - bg_padding
+                            bg_x1 = line_x + line_width + bg_padding
+                            bg_y1 = line_y + max_line_height + bg_padding
+                            # --- END OF FIX ---
+                            draw.rectangle([bg_x0, bg_y0, bg_x1, bg_y1], fill=style_color_tuple)
+                        
+                        elif style == "Drop Shadow":
+                            shadow_x = line_x + shadow_x_offset
+                            shadow_y_line = line_y + shadow_y_offset
+                            draw.text((shadow_x, shadow_y_line), line, font=font, fill=style_color_tuple)
+                        
+                        line_y += max_line_height # Use the consistent height for line spacing
+
+                if style == "Drop Shadow" and shadow_blur_radius > 0:
+                    shadow_text_layer = Image.new('RGBA', bg_pil.size, (0, 0, 0, 0))
+                    shadow_draw = ImageDraw.Draw(shadow_text_layer)
+                    line_y = final_y
+                    for line in lines:
+                        line_bbox = temp_draw_for_bbox.textbbox((0,0), line, font=font)
+                        line_width = line_bbox[2] - line_bbox[0]
+                        line_x_offset = (text_width - line_width) / 2 if horizontal_align == "center" else (text_width - line_width) if horizontal_align == "right" else 0
+                        line_x = final_x + line_x_offset
+                        shadow_draw.text((line_x + shadow_x_offset, line_y + shadow_y_offset), line, font=font, fill=style_color_tuple)
+                        line_y += max_line_height
+                    
+                    shadow_text_layer = shadow_text_layer.filter(ImageFilter.GaussianBlur(radius=shadow_blur_radius))
+                    text_layer.paste(shadow_text_layer, mask=shadow_text_layer)
+
+                line_y = final_y
+                for line in lines:
+                    line_bbox = temp_draw_for_bbox.textbbox((0,0), line, font=font)
+                    line_width = line_bbox[2] - line_bbox[0]
+                    line_x_offset = (text_width - line_width) / 2 if horizontal_align == "center" else (text_width - line_width) if horizontal_align == "right" else 0
+                    line_x = final_x + line_x_offset
+                    draw.text((line_x, line_y), line, font=font, fill=main_color_tuple)
+                    line_y += max_line_height
+
                 composited_image = Image.alpha_composite(bg_pil, text_layer).convert("RGB")
-                
                 output_tensor[i] = torch.from_numpy(np.array(composited_image).astype(np.float32) / 255.0)
 
         return (output_tensor,)
-
 # --- UTILITY NODES ---
 class StringBatchToString:
     CATEGORY = "Automation/Utils"; RETURN_TYPES, RETURN_NAMES = ("STRING",), ("string",); FUNCTION = "convert"
@@ -1003,3 +1031,82 @@ class ImageMaskBatchCombiner:
             print(f"Combiner Error: Could not concatenate tensors. This can happen if the images have different sizes. Error: {e}")
             # Fallback to returning the first item to prevent crashing the workflow.
             return (image_batch[0], mask_batch[0])
+        
+class TransformPaster:
+    CATEGORY = "Automation/Image"
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("composited_image",)
+    FUNCTION = "process"
+
+    @classmethod
+    def INPUT_TYPES(s):
+        # Using a list from a previous node's class definition for consistency
+        resampling_methods = ["LANCZOS", "BICUBIC", "BILINEAR", "NEAREST"]
+        
+        return {
+            "required": {
+                "background_image": ("IMAGE", {"tooltip": "The base image to paste onto. Only the first image in a batch is used."}),
+                "overlay_image": ("IMAGE", {"tooltip": "The image to transform and paste. Only the first image in a batch is used."}),
+                "overlay_mask": ("MASK", {"tooltip": "The mask for the overlay. Only the first mask in a batch is used."}),
+                "size": ("INT", {"default": 256, "min": 1, "max": 8192, "step": 8, "tooltip": "The target size (longest side) of the overlay image before pasting."}),
+                "rotation": ("FLOAT", {"default": 0.0, "min": -360.0, "max": 360.0, "step": 0.1, "round": 0.01, "tooltip": "Rotation of the overlay in degrees."}),
+                "x_offset": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1, "tooltip": "Final horizontal position (from center) of the overlay."}),
+                "y_offset": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1, "tooltip": "Final vertical position (from center) of the overlay."}),
+                "interpolation": (resampling_methods, {"default": "LANCZOS", "tooltip": "The resampling filter to use for transformations. LANCZOS is high quality."}),
+            }
+        }
+
+    def _tensor_to_pil(self, tensor):
+        # Takes a single frame from a tensor batch
+        return Image.fromarray((tensor[0].cpu().numpy() * 255).astype(np.uint8))
+
+    def _pil_to_tensor(self, pil_image):
+        return torch.from_numpy(np.array(pil_image).astype(np.float32) / 255.0).unsqueeze(0)
+
+    def process(self, background_image, overlay_image, overlay_mask, size, rotation, x_offset, y_offset, interpolation):
+        # Convert tensors to PIL Images
+        bg_pil = self._tensor_to_pil(background_image)
+        overlay_pil = self._tensor_to_pil(overlay_image)
+        mask_pil = self._tensor_to_pil(overlay_mask.unsqueeze(-1).repeat(1, 1, 3)) # Convert mask to 3-channel for PIL
+
+        resampling_filter = getattr(Image.Resampling, interpolation, Image.Resampling.LANCZOS)
+
+        # Combine overlay and mask into a single RGBA image
+        overlay_rgba = overlay_pil.convert("RGBA")
+        overlay_rgba.putalpha(mask_pil.getchannel('L'))
+
+        # 1. Scale the overlay
+        if overlay_rgba.width > 0 and overlay_rgba.height > 0:
+            aspect_ratio = overlay_rgba.width / overlay_rgba.height
+            if overlay_rgba.width >= overlay_rgba.height:
+                new_w = size
+                new_h = max(1, int(new_w / aspect_ratio))
+            else:
+                new_h = size
+                new_w = max(1, int(new_h * aspect_ratio))
+            overlay_rgba = overlay_rgba.resize((new_w, new_h), resample=resampling_filter)
+
+        # 2. Rotate the scaled overlay
+        # 'expand=True' is crucial to prevent the corners from being clipped off.
+        if rotation != 0:
+            overlay_rgba = overlay_rgba.rotate(rotation, resample=resampling_filter, expand=True)
+            
+        # 3. Paste onto the background
+        # Ensure background is RGBA for proper alpha compositing
+        bg_rgba = bg_pil.convert("RGBA")
+        
+        # Calculate the top-left corner for pasting, so the center is at the offset
+        canvas_center_x = bg_rgba.width // 2
+        canvas_center_y = bg_rgba.height // 2
+        
+        paste_x = canvas_center_x + x_offset - (overlay_rgba.width // 2)
+        paste_y = canvas_center_y + y_offset - (overlay_rgba.height // 2)
+
+        # The 'mask' argument for paste with an RGBA source is the alpha channel of the source itself.
+        bg_rgba.paste(overlay_rgba, (paste_x, paste_y), mask=overlay_rgba)
+
+        # Convert back to RGB for standard ComfyUI output and then to a tensor
+        final_pil = bg_rgba.convert("RGB")
+        output_tensor = self._pil_to_tensor(final_pil)
+
+        return (output_tensor,)
