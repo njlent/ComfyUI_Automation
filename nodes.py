@@ -573,8 +573,8 @@ class MaskBatchRepeater:
 class AudioReactivePaster:
     """
     Pastes an overlay image/timeline onto a background video/image batch, with its
-    position animated by the amplitude of a single audio signal. This node is designed
-    to be a final compositor and will only execute ONCE, even if fed batched inputs.
+    position animated by the amplitude of a single audio signal. This version is
+    memory-efficient and works directly on the input tensor to avoid allocation errors.
     """
     CATEGORY = "Automation/Video"
     RETURN_TYPES = ("IMAGE", "IMAGE")
@@ -583,6 +583,7 @@ class AudioReactivePaster:
 
     @classmethod
     def INPUT_TYPES(s):
+        # (INPUT_TYPES definition is unchanged)
         return {
             "required": {
                 "background_image": ("IMAGE", {"tooltip": "The base video or image batch to paste onto."}),
@@ -615,13 +616,17 @@ class AudioReactivePaster:
 
     def process(self, background_image, overlay_image, overlay_mask, audio, fps, size, horizontal_align, vertical_align, margin, x_offset, y_offset, x_strength, y_strength, smoothing_method, gaussian_sigma, ema_span, sma_window):
         
+        # Debatching logic for safety
         if isinstance(background_image, list): background_image = background_image[0]
         if isinstance(overlay_image, list): overlay_image = overlay_image[0]
         if isinstance(overlay_mask, list): overlay_mask = overlay_mask[0]
         if isinstance(audio, list): audio = audio[0]
 
-        video_timeline = background_image.clone()
+        # --- THE CORRECT MEMORY FIX ---
+        # Do NOT clone the tensor. Work directly on the input tensor.
+        video_timeline = background_image
         num_video_frames = video_timeline.shape[0]
+        
         num_overlay_frames = overlay_image.shape[0]
 
         print(f"AudioReactivePaster: Processing a {num_video_frames}-frame timeline.")
@@ -629,6 +634,7 @@ class AudioReactivePaster:
         if num_overlay_frames > 1 and num_overlay_frames != num_video_frames:
             print(f"AudioReactivePaster: Warning! Overlay timeline ({num_overlay_frames} frames) does not match background timeline ({num_video_frames} frames).")
 
+        # Audio processing logic is unchanged
         sample_rate, waveform = audio['sample_rate'], audio['waveform'][0]
         if waveform.shape[0] > 1: waveform = torch.mean(waveform, dim=0, keepdim=True)
         total_audio_samples = waveform.shape[1]; samples_per_frame = int(sample_rate / fps)
@@ -654,32 +660,28 @@ class AudioReactivePaster:
         
         cw, ch = video_timeline.shape[2], video_timeline.shape[1]
 
-        # Process frame by frame internally
+        # Process frame by frame, modifying the input tensor in-place
         for i in range(num_video_frames):
-            bg_pil = self._tensor_to_pil(video_timeline[i]); amp = final_amps[i]
+            bg_tensor_frame = video_timeline[i]
+            bg_pil = self._tensor_to_pil(bg_tensor_frame).convert("RGBA")
+            amp = final_amps[i]
             
             overlay_idx = i % num_overlay_frames
             pil_overlay = self._tensor_to_pil(overlay_image[overlay_idx])
             pil_mask = self._tensor_to_pil(overlay_mask[i % overlay_mask.shape[0]])
             
-            ### --- START OF FIX: UPSCALE/DOWNSCALE LOGIC --- ###
-            # Replaces `thumbnail` with logic that allows for upscaling.
-            if pil_overlay.width > 0 and pil_overlay.height > 0: # Avoid division by zero
+            # Resizing logic (allows upscaling)
+            if pil_overlay.width > 0 and pil_overlay.height > 0:
                 aspect_ratio = pil_overlay.width / pil_overlay.height
                 if pil_overlay.width >= pil_overlay.height:
-                    new_w = size
-                    new_h = max(1, int(new_w / aspect_ratio))
+                    new_w = size; new_h = max(1, int(new_w / aspect_ratio))
                 else:
-                    new_h = size
-                    new_w = max(1, int(new_h * aspect_ratio))
-                
-                # Use .resize() which can scale both up and down.
+                    new_h = size; new_w = max(1, int(new_h * aspect_ratio))
                 pil_overlay = pil_overlay.resize((new_w, new_h), Image.Resampling.LANCZOS)
-            ### --- END OF FIX --- ###
-
-            # The mask must always be resized to match the newly resized overlay.
+            
             pil_mask = pil_mask.resize(pil_overlay.size, Image.Resampling.LANCZOS)
             
+            # Positioning logic
             if horizontal_align == "left": x = margin
             elif horizontal_align == "right": x = cw - pil_overlay.width - margin
             else: x = (cw - pil_overlay.width) // 2
@@ -688,10 +690,202 @@ class AudioReactivePaster:
             else: y = (ch - pil_overlay.height) // 2
             
             fx = int(x + x_offset + (amp * x_strength)); fy = int(y + y_offset + (amp * y_strength))
-            bg_pil.paste(pil_overlay, (fx, fy), mask=pil_mask)
-            video_timeline[i] = self._pil_to_tensor_single(bg_pil)
             
+            # Composite and write back to the original tensor
+            composited_image = Image.alpha_composite(bg_pil, pil_overlay.convert("RGBA").transform(bg_pil.size, Image.Transform.AFFINE, (1, 0, fx, 0, 1, fy), fillcolor=(0,0,0,0)))
+            video_timeline[i] = self._pil_to_tensor_single(composited_image.convert("RGB"))
+
+        # Return the modified input tensor and the visualization
         return (video_timeline, viz_tensor)
+    
+    
+class AnimateTextOnImage:
+    CATEGORY = "Automation/Image"
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("image",)
+    FUNCTION = "animate_text"
+    
+    @classmethod
+    def INPUT_TYPES(s):
+        # (INPUT_TYPES definition is unchanged)
+        font_files = set(["arial.ttf", "verdana.ttf", "tahoma.ttf", "cour.ttf", "times.ttf", "DejaVuSans.ttf", "LiberationSans-Regular.ttf"])
+        font_dirs = []
+        if os.name == 'nt': font_dirs.append(os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts'))
+        elif os.name == 'posix': font_dirs.extend(['/usr/share/fonts/truetype/', '/usr/local/share/fonts/', '~/.fonts/', '/System/Library/Fonts/', '/Library/Fonts/'])
+        for directory in font_dirs:
+            try:
+                if os.path.exists(os.path.expanduser(directory)):
+                    for f in os.listdir(os.path.expanduser(directory)):
+                        if f.lower().endswith('.ttf'): font_files.add(f)
+            except: pass
+
+        return {
+            "required": {
+                "background_image": ("IMAGE", {"tooltip": "The background video timeline to draw the animation on."}),
+                "text": ("STRING", {"multiline": True, "forceInput": True, "tooltip": "A single text block or a list of texts to animate in sequence."}),
+                "animation_type": (["Typewriter (Character by Character)", "Reveal (Word by Word)"],),
+                "animation_duration": ("INT", {"default": 30, "min": 1, "max": 9999, "tooltip": "Duration of the typing/reveal effect for each text block."}),
+                "duration_unit": (["Frames", "Percent of Text Duration"], {"default": "Frames", "tooltip": "'Frames': Fixed duration. 'Percent': Duration is a percentage of the text's total display time."}),
+                "font_name": (sorted(list(font_files)),),
+                "font_size": ("INT", {"default": 50, "min": 1, "max": 1024, "step": 1}),
+                "font_color": ("STRING", {"default": "255, 255, 255, 255", "tooltip": "R,G,B,A format for the main text."}),
+                "wrap_width": ("INT", {"default": 0, "min": 0, "max": 8192, "step": 1}),
+                "style": (["None", "Background Block", "Drop Shadow"], {"default": "None"}),
+                "style_color": ("STRING", {"default": "0, 0, 0, 128", "tooltip": "R,G,B,A format for the chosen style."}),
+                "bg_padding": ("INT", {"default": 10, "min": 0, "max": 200, "step": 1, "tooltip": "Padding for the Background Block."}),
+                "shadow_x_offset": ("INT", {"default": 5, "min": -100, "max": 100, "step": 1, "tooltip": "Horizontal offset for the Drop Shadow."}),
+                "shadow_y_offset": ("INT", {"default": 5, "min": -100, "max": 100, "step": 1, "tooltip": "Vertical offset for the Drop Shadow."}),
+                "shadow_blur_radius": ("INT", {"default": 5, "min": 0, "max": 100, "step": 1, "tooltip": "Blur radius for the Drop Shadow."}),
+                "x_position": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1}),
+                "y_position": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1}),
+                "horizontal_align": (["left", "center", "right"],),
+                "vertical_align": (["top", "center", "bottom"],),
+                "margin": ("INT", {"default": 20, "min": 0, "max": 1024, "step": 1})
+            },
+            "optional": {
+                "text_durations": ("INT", {"forceInput": True, "tooltip": "A list of frame counts to control the display duration of each text. Required for animating a list of texts."})
+            }
+        }
+
+    def find_font(self, font_name):
+        font_dirs = [];
+        if os.name == 'nt': font_dirs.append(os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts'))
+        elif os.name == 'posix': font_dirs.extend(['/usr/share/fonts/truetype/', '/usr/local/share/fonts/', '~/.fonts/', '/System/Library/Fonts/', '/Library/Fonts/'])
+        for directory in font_dirs:
+            font_path = os.path.join(os.path.expanduser(directory), font_name)
+            if os.path.exists(font_path): return font_path
+        print(f"ComfyUI_Automation: Font '{font_name}' not found. Falling back to default."); return "DejaVuSans.ttf"
+
+    def _wrap_text(self, text: str, font: ImageFont.FreeTypeFont, max_width: int, draw: ImageDraw.ImageDraw) -> str:
+        lines = []
+        words = text.split()
+        if not words: return ""
+        current_line = words[0]
+        for word in words[1:]:
+            test_line = f"{current_line} {word}"
+            if draw.textbbox((0, 0), test_line, font=font)[2] <= max_width:
+                current_line = test_line
+            else: lines.append(current_line); current_line = word
+        lines.append(current_line)
+        return "\n".join(lines)
+
+    def _parse_color(self, color_string, default_color):
+        try:
+            parts = [int(c.strip()) for c in color_string.split(',')]
+            if len(parts) == 3: parts.append(255)
+            return tuple(parts)
+        except:
+            return default_color
+
+    def animate_text(self, background_image, text, animation_type, animation_duration, duration_unit, font_name, font_size, font_color, wrap_width, style, style_color, bg_padding, shadow_x_offset, shadow_y_offset, shadow_blur_radius, x_position, y_position, horizontal_align, vertical_align, margin, text_durations=None):
+        
+        output_tensor = background_image
+        num_bg_frames = output_tensor.shape[0]
+
+        text_list = [text] if isinstance(text, str) else text
+        frame_to_text_info = {}
+        font_path = self.find_font(font_name)
+        try: font = ImageFont.truetype(font_path, font_size)
+        except IOError: font = ImageFont.load_default()
+        
+        main_color_tuple = self._parse_color(font_color, (255, 255, 255, 255))
+        style_color_tuple = self._parse_color(style_color, (0, 0, 0, 128))
+
+        current_frame = 0
+        durations = text_durations if (text_durations and isinstance(text_durations, list)) else [num_bg_frames]
+        
+        # This temporary draw object is used for all text wrapping calculations.
+        temp_draw = ImageDraw.Draw(Image.new('RGBA', (1,1)))
+        
+        for i, text_item in enumerate(text_list):
+            if i >= len(durations): break
+            display_duration = durations[i]
+            anim_dur = int(display_duration * (animation_duration / 100.0)) if duration_unit == "Percent of Text Duration" else animation_duration
+            anim_dur = max(1, min(anim_dur, display_duration))
+
+            final_text = self._wrap_text(text_item, font, wrap_width, temp_draw) if wrap_width > 0 else text_item
+            
+            animation_steps = []
+            if animation_type == "Typewriter (Character by Character)":
+                animation_steps = [final_text[:j+1] for j in range(len(final_text))]
+            else:
+                unwrapped_words = text_item.split()
+                animation_steps = [self._wrap_text(" ".join(unwrapped_words[:j+1]), font, wrap_width, temp_draw) if wrap_width > 0 else " ".join(unwrapped_words[:j+1]) for j in range(len(unwrapped_words))]
+
+            num_steps = len(animation_steps)
+            frames_per_step = anim_dur / num_steps if num_steps > 0 else float('inf')
+
+            for frame_offset in range(display_duration):
+                frame_idx = current_frame + frame_offset
+                if frame_idx >= num_bg_frames: break
+                text_to_draw = final_text
+                if frame_offset < anim_dur and num_steps > 0:
+                    step_index = min(int(frame_offset / frames_per_step), num_steps - 1)
+                    text_to_draw = animation_steps[step_index]
+                frame_to_text_info[frame_idx] = {"full_text_layout": final_text, "draw_text": text_to_draw}
+            
+            current_frame += display_duration
+
+        canvas_w, canvas_h = output_tensor.shape[2], output_tensor.shape[1]
+
+        for i in range(num_bg_frames):
+            text_info = frame_to_text_info.get(i)
+            
+            if text_info and text_info["draw_text"]:
+                bg_tensor_frame = output_tensor[i]
+                bg_pil = Image.fromarray((bg_tensor_frame.cpu().numpy() * 255).astype(np.uint8)).convert("RGBA")
+                
+                full_text_layout = text_info["full_text_layout"]
+                current_text = text_info["draw_text"]
+                
+                # We need a draw object to calculate the multi-line bounding box correctly.
+                temp_draw_for_bbox = ImageDraw.Draw(bg_pil)
+
+                # --- START OF FIX ---
+                # Use temp_draw_for_bbox.textbbox() for accurate multi-line height.
+                full_bbox = temp_draw_for_bbox.textbbox((0,0), full_text_layout, font=font)
+                text_width, text_height = full_bbox[2] - full_bbox[0], full_bbox[3] - full_bbox[1]
+                # --- END OF FIX ---
+                
+                if horizontal_align == "left": x = margin
+                elif horizontal_align == "right": x = canvas_w - text_width - margin
+                else: x = (canvas_w - text_width) / 2
+                
+                if vertical_align == "top": y = margin
+                elif vertical_align == "bottom": y = canvas_h - text_height - margin
+                else: y = (canvas_h - text_height) / 2
+                
+                final_x, final_y = x + x_position, y + y_position
+
+                text_layer = Image.new('RGBA', bg_pil.size, (0, 0, 0, 0))
+                draw = ImageDraw.Draw(text_layer)
+
+                if style == "Background Block":
+                    # --- START OF FIX ---
+                    # Also use the more accurate textbbox for the current text block.
+                    current_bbox = temp_draw_for_bbox.textbbox((0,0), current_text, font=font)
+                    bg_x0 = final_x + current_bbox[0] - bg_padding
+                    bg_y0 = final_y + current_bbox[1] - bg_padding
+                    bg_x1 = final_x + current_bbox[2] + bg_padding
+                    bg_y1 = final_y + current_bbox[3] + bg_padding
+                    # --- END OF FIX ---
+                    draw.rectangle([bg_x0, bg_y0, bg_x1, bg_y1], fill=style_color_tuple)
+                
+                elif style == "Drop Shadow":
+                    shadow_layer = Image.new('RGBA', bg_pil.size, (0, 0, 0, 0))
+                    shadow_draw = ImageDraw.Draw(shadow_layer)
+                    shadow_draw.text((final_x + shadow_x_offset, final_y + shadow_y_offset), current_text, font=font, fill=style_color_tuple)
+                    if shadow_blur_radius > 0:
+                        shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=shadow_blur_radius))
+                    text_layer = Image.alpha_composite(text_layer, shadow_layer)
+                    draw = ImageDraw.Draw(text_layer)
+
+                draw.text((final_x, final_y), current_text, font=font, fill=main_color_tuple)
+                composited_image = Image.alpha_composite(bg_pil, text_layer).convert("RGB")
+                
+                output_tensor[i] = torch.from_numpy(np.array(composited_image).astype(np.float32) / 255.0)
+
+        return (output_tensor,)
 
 # --- UTILITY NODES ---
 class StringBatchToString:

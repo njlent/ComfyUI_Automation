@@ -12,6 +12,7 @@ NODES_TO_LOAD = {
     "SRTSceneGenerator": "🎞️ SRT Scene Generator",
     "TextOnImage": "✍️ Text on Image",
     "PasteTextOnImageBatch": "✍️ Paste Text on Image Batch",
+    "AnimateTextOnImage": "✍️ Animate Text on Image",
     "ImageBatchRepeater": "🔂 Image Batch Repeater",
     "MaskBatchRepeater": "🔂 Mask Batch Repeater",
     "LayeredImageProcessor": "🖼️ Layered Image Processor",
