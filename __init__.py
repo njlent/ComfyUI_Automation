@@ -13,7 +13,9 @@ NODES_TO_LOAD = {
     "TextOnImage": "✍️ Text on Image",
     "ImageBatchRepeater": "🔂 Image Batch Repeater",
     "LayeredImageProcessor": "🖼️ Layered Image Processor",
-    "AudioReactivePaster": "🔊 Audio Reactive Paster"
+    "AudioReactivePaster": "🔊 Audio Reactive Paster",
+    "ImageSelectorByIndex": "🖼️🎭 Image Selector by Index",
+    "StringToInteger": "🔢 String to Integer"
 }
 
 # These will be populated automatically
@@ -47,6 +49,7 @@ for class_name, display_name in NODES_TO_LOAD.items():
         # Print the full traceback to help debug
         traceback.print_exc()
 
+print("###")
 print(f"### \033[34mComfyUI_Automation:\033[0m Successfully loaded {len(NODE_CLASS_MAPPINGS)} out of {len(NODES_TO_LOAD)} nodes.")
 # Export the mappings to ComfyUI
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']

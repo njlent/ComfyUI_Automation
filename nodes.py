@@ -292,30 +292,61 @@ class ImageBatchRepeater:
         final_timeline = torch.cat(output_batches, dim=0); return (final_timeline,)
 
 class AudioReactivePaster:
-    CATEGORY = "Automation/Video"; RETURN_TYPES = ("IMAGE", "IMAGE"); RETURN_NAMES = ("image_timeline", "amplitude_visualization"); FUNCTION = "process"
+    """
+    Pastes an overlay image onto a background video/image batch, with its
+    position animated by the amplitude of an audio signal. Includes multiple advanced
+    smoothing methods for high-quality motion.
+    """
+    CATEGORY = "Automation/Video"
+    RETURN_TYPES = ("IMAGE", "IMAGE")
+    RETURN_NAMES = ("image_timeline", "amplitude_visualization")
+    FUNCTION = "process"
+
     @classmethod
     def INPUT_TYPES(s):
-        return {"required": {
-            "background_image": ("IMAGE", {"tooltip": "The base video or image batch to paste onto."}),
-            "overlay_image": ("IMAGE", {"tooltip": "The image to paste. If a batch is provided, only the first image is used."}),
-            "overlay_mask": ("MASK", {"tooltip": "The mask for the overlay image. Only the first mask in a batch is used."}),
-            "audio": ("AUDIO", {"tooltip": "The audio signal to drive the animation."}),
-            "fps": ("INT", {"default": 24, "min": 1, "max": 120, "tooltip": "MUST match the FPS of your background video timeline."}),
-            "size": ("INT", {"default": 256, "step": 8, "tooltip": "The target size of the overlay image."}),
-            "horizontal_align": (["left", "center", "right"], {"tooltip": "Horizontal resting position of the overlay."}),
-            "vertical_align": (["top", "center", "bottom"], {"tooltip": "Vertical resting position of the overlay."}),
-            "margin": ("INT", {"default": 0, "tooltip": "Padding from the edge for alignment."}),
-            "x_offset": ("INT", {"default": 0, "step": 1, "tooltip": "Static horizontal offset from the aligned position."}),
-            "y_offset": ("INT", {"default": 0, "step": 1, "tooltip": "Static vertical offset from the aligned position."}),
-            "x_strength": ("FLOAT", {"default": 100.0, "step": 0.1, "tooltip": "How much the audio moves the image horizontally. Negative values invert direction."}),
-            "y_strength": ("FLOAT", {"default": 100.0, "step": 0.1, "tooltip": "How much the audio moves the image vertically. Negative values invert direction."}),
-            "smoothing_method": (["Gaussian", "Exponential Moving Average (EMA)", "Simple Moving Average (SMA)", "None"], {"tooltip": "The algorithm used to smooth the audio-driven motion."}),
-            "gaussian_sigma": ("FLOAT", {"default": 3.0, "min": 0.1, "max": 50.0, "step": 0.1, "tooltip": "Strength for Gaussian smoothing. Higher = smoother. Recommended: 2-10."}),
-            "ema_span": ("INT", {"default": 10, "min": 1, "max": 200, "step": 1, "tooltip": "Window size for EMA smoothing. Higher = smoother but more 'lag'. Recommended: 5-20."}),
-            "sma_window": ("INT", {"default": 3, "min": 1, "max": 50, "step": 1, "tooltip": "Window size for Simple Moving Average. Larger values are smoother."})
-        }}
-    
-    # ... (The rest of the class functions are unchanged)
+        return {
+            "required": {
+                "background_image": ("IMAGE", {"tooltip": "The base video or image batch to paste onto."}),
+                "overlay_image": ("IMAGE", {"tooltip": "The image to paste. If a batch is provided, only the first image is used."}),
+                "overlay_mask": ("MASK", {"tooltip": "The mask for the overlay image. Only the first mask in a batch is used."}),
+                "audio": ("AUDIO", {"tooltip": "The audio signal to drive the animation."}),
+                "fps": ("INT", {"default": 24, "min": 1, "max": 120, "tooltip": "MUST match the FPS of your background video timeline."}),
+                
+                # Motion and Position controls
+                "size": ("INT", {"default": 256, "min": 1, "max": 8192, "step": 8, "tooltip": "The target size of the overlay image."}),
+                "horizontal_align": (["left", "center", "right"], {"default": "center", "tooltip": "Horizontal resting position of the overlay."}),
+                "vertical_align": (["top", "center", "bottom"], {"default": "center", "tooltip": "Vertical resting position of the overlay."}),
+                "margin": ("INT", {"default": 0, "min": 0, "max": 1024, "step": 1, "tooltip": "Padding from the edge for alignment."}),
+                "x_offset": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1, "tooltip": "Static horizontal offset from the aligned position."}),
+                "y_offset": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1, "tooltip": "Static vertical offset from the aligned position."}),
+                
+                # --- UPDATED STRENGTH CONTROLS ---
+                "x_strength": ("FLOAT", {
+                    "default": 100.0, 
+                    "min": -2000.0, 
+                    "max": 2000.0, 
+                    "step": 0.1, 
+                    "tooltip": "How much the audio moves the image horizontally. Use negative values to move left."
+                }),
+                "y_strength": ("FLOAT", {
+                    "default": 100.0, 
+                    "min": -2000.0, 
+                    "max": 2000.0, 
+                    "step": 0.1, 
+                    "tooltip": "How much the audio moves the image vertically. Use negative values to move up."
+                }),
+                
+                # Smoothing Controls
+                "smoothing_method": (["Gaussian", "Exponential Moving Average (EMA)", "Simple Moving Average (SMA)", "None"], {
+                    "default": "Gaussian", "tooltip": "The algorithm used to smooth the audio-driven motion."
+                }),
+                "gaussian_sigma": ("FLOAT", {"default": 3.0, "min": 0.1, "max": 50.0, "step": 0.1, "tooltip": "Strength for Gaussian smoothing. Higher = smoother. Recommended: 2-10."}),
+                "ema_span": ("INT", {"default": 10, "min": 1, "max": 200, "step": 1, "tooltip": "Window for EMA smoothing. Higher = smoother but more 'lag'. Recommended: 5-20."}),
+                "sma_window": ("INT", {"default": 3, "min": 1, "max": 50, "step": 1, "tooltip": "Window for Simple Moving Average. Larger values are smoother."})
+            }
+        }
+
+    # --- NO CHANGES TO THE LOGIC BELOW THIS LINE ---
     def _tensor_to_pil(self, t): return Image.fromarray((t.cpu().numpy() * 255).astype(np.uint8))
     def _pil_to_tensor_single(self, p): return torch.from_numpy(np.array(p).astype(np.float32) / 255.0)
     def smooth_data(self, d, m, gs, es, sw):
@@ -327,7 +358,9 @@ class AudioReactivePaster:
         video_timeline = background_image.clone(); num_video_frames = video_timeline.shape[0]; sample_rate = audio['sample_rate']; waveform = audio['waveform'][0]
         if waveform.shape[0] > 1: waveform = torch.mean(waveform, dim=0, keepdim=True)
         total_audio_samples = waveform.shape[1]; samples_per_frame = int(sample_rate / fps)
-        if total_audio_samples < samples_per_frame: return (video_timeline, torch.zeros((1, 100, num_video_frames, 3)))
+        if total_audio_samples < samples_per_frame:
+            print("AudioReactivePaster: FATAL ERROR - Audio clip is shorter than a single video frame. Check audio file.")
+            return (video_timeline, torch.zeros((1, 100, num_video_frames, 3)))
         raw_amplitudes = []
         for i in range(num_video_frames):
             t_sec = i / fps; s_idx = int(t_sec * sample_rate) % total_audio_samples; s_start = s_idx; s_end = s_start + samples_per_frame
@@ -372,3 +405,181 @@ class StringBatchToString:
         if isinstance(string_batch, list): return (s.join(str(i) for i in string_batch),)
         elif isinstance(string_batch, str): return (string_batch,)
         return ("",)
+    
+class ImageSelectorByIndex:
+    """
+    Selects and loads a batch of images from a directory based on a
+    corresponding batch of indices (numbers).
+    """
+    CATEGORY = "Automation/Image"
+    RETURN_TYPES = ("IMAGE", "MASK")
+    RETURN_NAMES = ("image_batch", "mask_batch")
+    FUNCTION = "select_images"
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "index_batch": ("INT", {"forceInput": True, "tooltip": "A list of integers (e.g., from an LLM) used to select the images."}),
+                "directory_path": ("STRING", {"multiline": False, "default": "", "tooltip": "The path to the folder containing your numbered image assets."}),
+                "file_pattern": ("STRING", {"multiline": False, "default": "face_{}.png", "tooltip": "The naming pattern for your files. Use '{}' as a placeholder for the index number."}),
+            },
+            "optional": {
+                "fallback_image": ("IMAGE", {"tooltip": "An optional image to use if a numbered file is not found. If not provided, a black image is used."}),
+            }
+        }
+        
+    def _load_image(self, full_path):
+        """Loads a single image and returns its image and mask tensors."""
+        if not os.path.exists(full_path):
+            return None, None
+            
+        i = Image.open(full_path)
+        i = i.convert("RGBA") # Ensure there's an alpha channel
+        
+        image = np.array(i).astype(np.float32) / 255.0
+        image_tensor = torch.from_numpy(image)[None,]
+        
+        img_pil_alpha = i.getchannel('A')
+        mask = np.array(img_pil_alpha).astype(np.float32) / 255.0
+        mask_tensor = torch.from_numpy(mask)
+        
+        return image_tensor[:, :, :, :3], mask_tensor # Return RGB and Mask
+
+    def select_images(self, index_batch, directory_path, file_pattern, fallback_image=None):
+        # Normalize index_batch to be a list
+        indices = [index_batch] if isinstance(index_batch, int) else index_batch
+        
+        output_images = []
+        output_masks = []
+        
+        # Prepare a default fallback if none is provided
+        default_fallback_img = None
+        default_fallback_mask = None
+        if fallback_image is None:
+            # Create a 64x64 transparent pixel as a default fallback
+            default_fallback_img = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+            default_fallback_mask = torch.zeros((64, 64), dtype=torch.float32)
+
+        for index in indices:
+            try:
+                # Format the filename using the provided pattern and index
+                filename = file_pattern.format(index)
+                full_path = os.path.join(directory_path, filename)
+                
+                img_tensor, mask_tensor = self._load_image(full_path)
+                
+                if img_tensor is not None:
+                    print(f"ImageSelectorByIndex: Loaded '{filename}'")
+                    output_images.append(img_tensor)
+                    output_masks.append(mask_tensor)
+                else:
+                    # File was not found, use a fallback
+                    print(f"ImageSelectorByIndex: Warning! File '{filename}' not found. Using fallback.")
+                    if fallback_image is not None:
+                        # Use the first frame of the provided fallback image
+                        output_images.append(fallback_image[0].unsqueeze(0))
+                        # We don't have a mask for the fallback, so we create an opaque one
+                        output_masks.append(torch.ones((fallback_image.shape[1], fallback_image.shape[2]), dtype=torch.float32))
+                    else:
+                        output_images.append(default_fallback_img)
+                        output_masks.append(default_fallback_mask)
+                        
+            except Exception as e:
+                print(f"ImageSelectorByIndex: Error processing index {index}: {e}")
+                # On error, also use the fallback
+                if fallback_image is not None:
+                    output_images.append(fallback_image[0].unsqueeze(0))
+                    output_masks.append(torch.ones((fallback_image.shape[1], fallback_image.shape[2]), dtype=torch.float32))
+                else:
+                    output_images.append(default_fallback_img)
+                    output_masks.append(default_fallback_mask)
+
+        if not output_images:
+            print("ImageSelectorByIndex: No images were loaded.")
+            return (default_fallback_img, default_fallback_mask.unsqueeze(0))
+
+        # We must resize all images to match the first one to create a valid batch
+        first_h, first_w = output_images[0].shape[1], output_images[0].shape[2]
+        resized_images = [output_images[0]]
+        resized_masks = [output_masks[0]]
+
+        for i in range(1, len(output_images)):
+            img_tensor = output_images[i]
+            mask_tensor = output_masks[i]
+            
+            # Convert to PIL for resizing
+            pil_img = Image.fromarray((img_tensor.squeeze(0).cpu().numpy() * 255).astype(np.uint8))
+            pil_mask = Image.fromarray((mask_tensor.cpu().numpy() * 255).astype(np.uint8))
+            
+            # Resize
+            pil_img = pil_img.resize((first_w, first_h), Image.Resampling.LANCZOS)
+            pil_mask = pil_mask.resize((first_w, first_h), Image.Resampling.LANCZOS)
+            
+            # Convert back to tensor
+            resized_images.append(torch.from_numpy(np.array(pil_img).astype(np.float32) / 255.0).unsqueeze(0))
+            resized_masks.append(torch.from_numpy(np.array(pil_mask).astype(np.float32) / 255.0))
+
+        return (torch.cat(resized_images, dim=0), torch.stack(resized_masks, dim=0))
+    
+class StringToInteger:
+    """
+    Converts a string or a batch of strings into an integer or a batch of integers.
+    It intelligently handles non-numeric text.
+    """
+    CATEGORY = "Automation/Utils"
+    RETURN_TYPES = ("INT",)
+    RETURN_NAMES = ("int_output",)
+    FUNCTION = "convert"
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "text": ("STRING", {"forceInput": True, "tooltip": "A string or a batch of strings to convert to integers."}),
+            }
+        }
+
+    def convert(self, text):
+        # Handle a single string input
+        if isinstance(text, str):
+            try:
+                # Find all integer numbers in the string
+                numbers = re.findall(r'-?\d+', text)
+                if numbers:
+                    # Return the first number found
+                    result = int(numbers[0])
+                    print(f"StringToInteger: Converted '{text}' -> {result}")
+                    return (result,)
+                else:
+                    # If no numbers are found, return 0
+                    print(f"StringToInteger: No numbers found in '{text}'. Defaulting to 0.")
+                    return (0,)
+            except ValueError:
+                print(f"StringToInteger: Could not convert '{text}' to an integer. Defaulting to 0.")
+                return (0,)
+
+        # Handle a batch (list) of strings
+        elif isinstance(text, list):
+            int_batch = []
+            for item in text:
+                try:
+                    # Find all integer numbers in the string
+                    numbers = re.findall(r'-?\d+', str(item)) # Convert item to string just in case
+                    if numbers:
+                        # Append the first number found
+                        int_batch.append(int(numbers[0]))
+                    else:
+                        # If no numbers are found, append 0
+                        int_batch.append(0)
+                except ValueError:
+                    # If conversion fails for an item, append 0
+                    int_batch.append(0)
+            
+            print(f"StringToInteger: Converted batch of {len(text)} strings to integers.")
+            return (int_batch,)
+            
+        # Fallback for other unexpected types
+        else:
+            print(f"StringToInteger: Received unexpected type '{type(text)}'. Defaulting to 0.")
+            return (0,)
