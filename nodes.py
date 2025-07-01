@@ -13,6 +13,10 @@ import torch
 import io
 import os
 from PIL import ImageFilter
+import torchaudio
+import pandas as pd
+from scipy.ndimage import gaussian_filter1d
+
 
 # --- RSS FEEDER NODE ---
 class RssFeedReader:
@@ -398,3 +402,128 @@ class LayeredImageProcessor:
         final_batch = torch.cat(output_images, dim=0)
         
         return (final_batch,)
+    
+class AudioReactivePaster:
+    """
+    Pastes an overlay image onto a background video/image batch, with its
+    position animated by the amplitude of an audio signal. Includes multiple advanced
+    smoothing methods for high-quality motion.
+    """
+    CATEGORY = "Automation/Video"
+    RETURN_TYPES = ("IMAGE", "IMAGE")
+    RETURN_NAMES = ("image_timeline", "amplitude_visualization")
+    FUNCTION = "process"
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "background_image": ("IMAGE",), "overlay_image": ("IMAGE",), "overlay_mask": ("MASK",),
+                "audio": ("AUDIO",), "fps": ("INT", {"default": 24, "min": 1, "max": 120}),
+                # Motion and Position controls
+                "size": ("INT", {"default": 256, "step": 8}),
+                "horizontal_align": (["left", "center", "right"],), "vertical_align": (["top", "center", "bottom"],),
+                "margin": ("INT", {"default": 0}),
+                "x_offset": ("INT", {"default": 0, "step": 1}), "y_offset": ("INT", {"default": 0, "step": 1}),
+                "x_strength": ("FLOAT", {"default": 100.0, "step": 0.1}), "y_strength": ("FLOAT", {"default": 100.0, "step": 0.1}),
+                
+                # --- NEW SMOOTHING CONTROLS ---
+                "smoothing_method": (["Gaussian", "Exponential Moving Average (EMA)", "Simple Moving Average (SMA)", "None"], {
+                    "default": "Gaussian", "tooltip": "The algorithm used to smooth the audio-driven motion."
+                }),
+                "gaussian_sigma": ("FLOAT", {"default": 3.0, "min": 0.1, "max": 50.0, "step": 0.1, "tooltip": "Strength for Gaussian smoothing. Higher = smoother. Recommended: 2-10."}),
+                "ema_span": ("INT", {"default": 10, "min": 1, "max": 200, "step": 1, "tooltip": "Window size for EMA smoothing. Higher = smoother but more 'lag'. Recommended: 5-20."}),
+                "sma_window": ("INT", {"default": 3, "min": 1, "max": 50, "step": 1, "tooltip": "Window size for Simple Moving Average. Larger values are smoother but less responsive."})
+            }
+        }
+
+    def _tensor_to_pil(self, tensor):
+        return Image.fromarray((tensor.cpu().numpy() * 255).astype(np.uint8))
+
+    def _pil_to_tensor_single(self, pil_image):
+        return torch.from_numpy(np.array(pil_image).astype(np.float32) / 255.0)
+
+    def process(self, background_image, overlay_image, overlay_mask, audio, fps, size, horizontal_align, vertical_align, margin, x_offset, y_offset, x_strength, y_strength, smoothing_method, gaussian_sigma, ema_span, sma_window):
+        video_timeline = background_image.clone()
+        num_video_frames = video_timeline.shape[0]
+        sample_rate = audio['sample_rate']
+        waveform = audio['waveform'][0]
+
+        if waveform.shape[0] > 1:
+            waveform = torch.mean(waveform, dim=0, keepdim=True)
+        
+        total_audio_samples = waveform.shape[1]
+        samples_per_frame = int(sample_rate / fps)
+        
+        if total_audio_samples < samples_per_frame:
+            print("AudioReactivePaster: FATAL ERROR - Audio clip is shorter than a single video frame. Check audio file.")
+            return (video_timeline, torch.zeros((1, 100, num_video_frames, 3)))
+
+        # --- Audio Analysis ---
+        raw_amplitudes = []
+        for i in range(num_video_frames):
+            time_in_seconds = i / fps
+            sample_index = int(time_in_seconds * sample_rate) % total_audio_samples
+            start_sample = sample_index
+            end_sample = start_sample + samples_per_frame
+            audio_chunk = waveform[0, start_sample:end_sample] if end_sample <= total_audio_samples else torch.cat((waveform[0, start_sample:], waveform[0, :end_sample - total_audio_samples]))
+            amplitude = torch.max(torch.abs(audio_chunk)).item()
+            raw_amplitudes.append(amplitude)
+
+        max_amplitude = max(raw_amplitudes) if raw_amplitudes else 1.0
+        if max_amplitude == 0: max_amplitude = 1.0
+        normalized_amplitudes = [amp / max_amplitude for amp in raw_amplitudes]
+
+        # --- ADVANCED SMOOTHING LOGIC ---
+        final_amplitudes = []
+        if smoothing_method == "Gaussian":
+            print(f"Applying Gaussian smoothing with sigma={gaussian_sigma}")
+            final_amplitudes = gaussian_filter1d(normalized_amplitudes, sigma=gaussian_sigma)
+        elif smoothing_method == "Exponential Moving Average (EMA)":
+            print(f"Applying EMA smoothing with span={ema_span}")
+            series = pd.Series(normalized_amplitudes)
+            smoothed_series = series.ewm(span=ema_span, adjust=True).mean()
+            final_amplitudes = smoothed_series.tolist()
+        elif smoothing_method == "Simple Moving Average (SMA)":
+            print(f"Applying SMA smoothing with window={sma_window}")
+            series = pd.Series(normalized_amplitudes)
+            smoothed_series = series.rolling(window=sma_window, center=True, min_periods=1).mean().bfill().ffill()
+            final_amplitudes = smoothed_series.tolist()
+        else: # "None"
+            print("No smoothing applied.")
+            final_amplitudes = normalized_amplitudes
+        
+        print(f"AudioReactivePaster: First 5 final amplitudes: {[f'{a:.3f}' for a in final_amplitudes[:5]]}")
+
+        # --- Generate Visualization & Process Image ---
+        # (The rest of the code is unchanged)
+        viz_height = 100
+        viz_img = Image.new('RGB', (num_video_frames, viz_height), 'white')
+        viz_draw = ImageDraw.Draw(viz_img)
+        for i, amp in enumerate(final_amplitudes):
+            line_height = int(amp * (viz_height - 1))
+            viz_draw.line([(i, viz_height - 1), (i, viz_height - 1 - line_height)], fill='black', width=1)
+        viz_tensor = self._pil_to_tensor_single(viz_img).unsqueeze(0)
+
+        pil_overlay = self._tensor_to_pil(overlay_image[0])
+        pil_mask = self._tensor_to_pil(overlay_mask[0])
+        pil_overlay.thumbnail((size, size), Image.Resampling.LANCZOS)
+        pil_mask = pil_mask.resize(pil_overlay.size, Image.Resampling.LANCZOS)
+        canvas_width, canvas_height = video_timeline.shape[2], video_timeline.shape[1]
+        
+        for i in range(num_video_frames):
+            background_frame_pil = self._tensor_to_pil(video_timeline[i])
+            amp = final_amplitudes[i]
+            if horizontal_align == "left":   x = margin
+            elif horizontal_align == "right":  x = canvas_width - pil_overlay.width - margin
+            else: x = (canvas_width - pil_overlay.width) // 2
+            if vertical_align == "top":      y = margin
+            elif vertical_align == "bottom": y = canvas_height - pil_overlay.height - margin
+            else: y = (canvas_height - pil_overlay.height) // 2
+            final_x = int(x + x_offset + (amp * x_strength))
+            final_y = int(y + y_offset + (amp * y_strength))
+            background_frame_pil.paste(pil_overlay, (final_x, final_y), mask=pil_mask)
+            video_timeline[i] = self._pil_to_tensor_single(background_frame_pil)
+
+        print(f"AudioReactivePaster: Processed {num_video_frames} frames.")
+        return (video_timeline, viz_tensor)
