@@ -12,8 +12,10 @@ import numpy as np
 import torch
 import io
 import os
+import re
 import pandas as pd
 from scipy.ndimage import gaussian_filter1d
+import ast
 
 # --- RSS FEEDER NODE ---
 class RssFeedReader:
@@ -222,16 +224,42 @@ class TextOnImage:
 
 # --- SRT VIDEO NODES ---
 class SRTParser:
-    CATEGORY = "Automation/Video"; RETURN_TYPES, RETURN_NAMES = ("STRING", "INT", "INT", "INT", "INT"), ("text_batch", "start_ms_batch", "end_ms_batch", "duration_ms_batch", "section_count"); FUNCTION = "parse_srt"
+    CATEGORY = "Automation/Video"
+    FUNCTION = "parse_srt"
+    
+    # --- START OF THE DEFINITIVE FIX ---
+
+    # 1. Define the original 5 outputs PLUS the new 6th output.
+    RETURN_TYPES = ("STRING", "INT", "INT", "INT", "INT", "STRING")
+    RETURN_NAMES = (
+        "text_batch",         # Original output
+        "start_ms_batch",     # Original output
+        "end_ms_batch",       # Original output
+        "duration_ms_batch",  # Original output
+        "section_count",      # Original output
+        "text_list"           # New, correct list output
+    )
+
+    # 2. This is the most important change. We explicitly tell ComfyUI
+    #    NOT to treat the first 5 outputs as lists, preserving their
+    #    original buggy behavior. We ONLY treat the new 6th output as a list.
+    OUTPUT_IS_LIST = (False, False, False, False, False, True)
+    
+    # --- END OF THE FIX ---
+
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
             "srt_content": ("STRING", {"multiline": True, "tooltip": "Paste the entire content of your SRT file here."}),
             "handle_pauses": (["Include Pauses", "Ignore Pauses"], {"default": "Include Pauses", "tooltip": "Determines how to handle silent gaps between subtitle entries."})
         }}
-    def srt_time_to_ms(self, t_str): h, m, s, ms = map(int, re.split('[:,]', t_str)); return (h * 3600 + m * 60 + s) * 1000 + ms
+
+    def srt_time_to_ms(self, t_str):
+        h, m, s, ms = map(int, re.split('[:,]', t_str))
+        return (h * 3600 + m * 60 + s) * 1000 + ms
+
     def parse_srt(self, srt_content, handle_pauses):
-        # ... (rest of the function logic is unchanged)
+        # The function logic remains identical.
         p = re.compile(r'(\d+)\n(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})\n([\s\S]*?(?=\n\n|\Z))')
         tb, sb, eb, db, let = [], [], [], [], 0
         for m in list(p.finditer(srt_content)):
@@ -239,9 +267,21 @@ class SRTParser:
             s_ms, e_ms = self.srt_time_to_ms(s_str), self.srt_time_to_ms(e_str)
             if handle_pauses == "Include Pauses" and s_ms > let:
                 pd = s_ms - let
-                if pd > 50: tb.append(""); sb.append(let); eb.append(s_ms); db.append(pd)
-            tb.append(txt); sb.append(s_ms); eb.append(e_ms); db.append(e_ms - s_ms); let = e_ms
-        return (tb, sb, eb, db, len(tb))
+                if pd > 50:
+                    tb.append("")
+                    sb.append(let)
+                    eb.append(s_ms)
+                    db.append(pd)
+            tb.append(txt)
+            sb.append(s_ms)
+            eb.append(e_ms)
+            db.append(e_ms - s_ms)
+            let = e_ms
+        
+        # 3. The return statement now provides data for all 6 outputs.
+        #    The `tb` list is returned for both the first (buggy) and last (correct) outputs.
+        #    ComfyUI will format them differently based on the OUTPUT_IS_LIST tuple above.
+        return (tb, sb, eb, db, len(tb), tb)
 
 class SRTSceneGenerator:
     CATEGORY = "Automation/Video"; RETURN_TYPES, RETURN_NAMES = ("IMAGE", "INT", "INT"), ("image_timeline", "start_frame_indices", "frame_counts"); FUNCTION = "generate_scenes"
@@ -290,6 +330,64 @@ class ImageBatchRepeater:
             repeated_batch = current_image_tensor.unsqueeze(0).repeat(current_count, 1, 1, 1); output_batches.append(repeated_batch)
         if not output_batches: h, w = image.shape[1], image.shape[2]; return (torch.zeros((1, h, w, 3)),)
         final_timeline = torch.cat(output_batches, dim=0); return (final_timeline,)
+
+class MaskBatchRepeater:
+    """
+    Repeats a batch of MASKS a specified number of times to create a video timeline.
+    Designed to work with the SRT Scene Generator's 'frame_counts' output.
+    """
+    CATEGORY = "Automation/Video"
+    RETURN_TYPES = ("MASK",)
+    RETURN_NAMES = ("mask_timeline",)
+    FUNCTION = "repeat_batch"
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "mask": ("MASK", {"tooltip": "The mask or batch of masks to repeat."}),
+                "repeat_counts": ("INT", {"forceInput": True, "tooltip": "An integer or a list of integers specifying how many times to repeat each corresponding mask."}),
+            }
+        }
+
+    def repeat_batch(self, mask, repeat_counts):
+        num_masks = mask.shape[0]
+        counts_list = [repeat_counts] if isinstance(repeat_counts, int) else repeat_counts
+        num_counts = len(counts_list)
+
+        if num_masks == 0 or num_counts == 0 or not any(c > 0 for c in counts_list):
+            # Return a default empty mask if inputs are invalid
+            h, w = (mask.shape[1], mask.shape[2]) if num_masks > 0 else (64, 64)
+            return (torch.zeros((1, h, w)),)
+
+        # Determine the number of iterations for smart batching
+        loop_count = min(num_masks, num_counts) if num_masks > 1 and num_counts > 1 else max(num_masks, num_counts)
+        if num_masks > 1 and num_counts > 1 and num_masks != num_counts:
+            print(f"MaskBatchRepeater: Warning! Mismatched batch sizes: Masks {num_masks}, Counts {num_counts}. Using shorter length.")
+
+        output_batches = []
+        for i in range(loop_count):
+            # Use specific variable names for clarity
+            current_mask_tensor = mask[i % num_masks]
+            current_count = counts_list[i % num_counts]
+            
+            if current_count <= 0:
+                continue
+            
+            # The logic for masks (3 dimensions) is slightly different than for images (4 dimensions)
+            # Unsqueeze adds a dimension, so (H, W) -> (1, H, W)
+            # Repeat then expands the first dimension, resulting in (N, H, W)
+            repeated_batch = current_mask_tensor.unsqueeze(0).repeat(current_count, 1, 1)
+            output_batches.append(repeated_batch)
+
+        if not output_batches:
+            h, w = mask.shape[1], mask.shape[2]
+            return (torch.zeros((1, h, w)),)
+            
+        final_timeline = torch.cat(output_batches, dim=0)
+        print(f"MaskBatchRepeater: Created a new mask timeline of {final_timeline.shape[0]} frames.")
+        
+        return (final_timeline,)
 
 class AudioReactivePaster:
     """
@@ -583,3 +681,52 @@ class StringToInteger:
         else:
             print(f"StringToInteger: Received unexpected type '{type(text)}'. Defaulting to 0.")
             return (0,)
+        
+class StringToListConverter:
+    """
+    This node takes a string that is a Python list literal (e.g., "['a', 'b', 'c']")
+    and converts it into a proper ComfyUI batch/list output. It's robust enough
+    to handle inputs that are either a raw string or a list containing a single string.
+    """
+    CATEGORY = "Automation/Converters"
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("STRING_LIST",)
+    FUNCTION = "convert"
+    OUTPUT_IS_LIST = (True,)
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "string_literal": ("STRING", {"multiline": True, "forceInput": True}),
+            }
+        }
+
+    def convert(self, string_literal):
+        # THIS IS THE CRUCIAL FIX
+        # First, determine the actual string we need to parse.
+        string_to_parse = ""
+        if isinstance(string_literal, list):
+            if string_literal: # If the list is not empty
+                string_to_parse = string_literal[0]
+        else:
+            string_to_parse = string_literal
+        
+        if not string_to_parse:
+            return ([],) # Return an empty list if there's nothing to parse
+
+        try:
+            # Safely evaluate the string as a Python literal
+            parsed_list = ast.literal_eval(string_to_parse)
+            
+            # Ensure the result is actually a list
+            if not isinstance(parsed_list, list):
+                return ([str(parsed_list)],)
+
+            # Ensure all items in the list are strings, as per RETURN_TYPES
+            string_list = [str(item) for item in parsed_list]
+            return (string_list,)
+        except (ValueError, SyntaxError, TypeError) as e:
+            # Handle cases where the string is not a valid list literal
+            print(f"StringToListConverter Error: Could not parse string '{string_to_parse[:100]}...' as a list. Error: {e}. Returning an empty list.")
+            return ([],)

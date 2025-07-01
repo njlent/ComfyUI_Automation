@@ -15,7 +15,11 @@ This is a collection of custom nodes for ComfyUI designed to automate and stream
 *   [**SRT Parser**](#-srt-parser)
 *   [**SRT Scene Generator**](#️-srt-scene-generator)
 *   [**Image Batch Repeater**](#-image-batch-repeater)
-*   [**Batch to String**](#-batch-to-string)
+*   [**Mask Batch Repeater**](#-mask-batch-repeater)
+*   [**Audio Reactive Paster**](#-audio-reactive-paster)
+*   [**Image Selector by Index**](#️-image-selector-by-index)
+*   [**String to Integer**](#-string-to-integer)
+*   [**List Flattener**](#-list-flattener)
 
 ---
 
@@ -27,7 +31,7 @@ This is a collection of custom nodes for ComfyUI designed to automate and stream
     git clone <your-repository-url-here> ComfyUI_Automation
     ```
     (Or, if you downloaded the files manually, just place the `ComfyUI_Automation` folder here).
-3.  Restart ComfyUI. The ComfyUI-Manager (or the terminal) should detect the `requirements.txt` file and prompt you to install the necessary dependencies (`feedparser`, `requests`, `beautifulsoup4`, `Pillow`).
+3.  Restart ComfyUI. The ComfyUI-Manager (or the terminal) should detect the `requirements.txt` file and prompt you to install the necessary dependencies (`feedparser`, `requests`, `beautifulsoup4`, `Pillow`, `torchaudio`, `pandas`, `scipy`).
 4.  If the dependencies are not installed automatically, you can install them manually by opening a terminal/command prompt, navigating to your ComfyUI installation, and running:
     ```bash
     pip install -r ComfyUI/custom_nodes/ComfyUI_Automation/requirements.txt
@@ -42,135 +46,115 @@ This is a collection of custom nodes for ComfyUI designed to automate and stream
 
 #### 📰 RSS Feed Reader
 *Category: `Automation/RSS`*
-
 Fetches and parses entries from one or more RSS feeds.
-
-*   **Inputs**:
-    *   `links`: A multiline text box for one or more RSS feed URLs.
-    *   `max_entries`: The maximum number of entries to fetch from *each* feed.
-    *   `skip_entries`: Skips the first N entries. Useful for paging through a feed.
-    *   `batch_source_1` / `batch_source_2`: Select the content (`title`, `summary`, or `link`) for the two independent batch outputs.
-    *   `output_mode`: `Batch Output` returns `raw_output` and `formatted_text` as batches. `Concatenated String` returns them as single large strings.
-*   **Outputs**:
-    *   `raw_output`: The full, raw JSON data for each entry.
-    *   `formatted_text`: A human-readable summary of each entry.
-    *   `content_batch_1` / `content_batch_2`: Batches of strings containing the content specified by the `batch_source` inputs.
 
 ### Automation/Web
 
 #### 🕸️ Simple Web Scraper
 *Category: `Automation/Web`*
-
 A basic scraper that grabs all text and all image links from one or more URLs.
-
-*   **Inputs**:
-    *   `url`: A single URL string or a batch of URL strings.
-*   **Outputs**:
-    *   `extracted_texts`: A batch of strings, where each string is the entire text content of a scraped page.
-    *   `image_urls`: A batch containing every image URL found across all scraped pages.
 
 #### 🎯 Targeted Web Scraper
 *Category: `Automation/Web`*
-
 A powerful scraper that extracts content from specific parts of a page using CSS selectors, with the ability to ignore unwanted elements.
-
-*   **Inputs**:
-    *   `url`: A single URL string or a batch of URL strings.
-    *   `selectors`: The CSS selectors for the content you **want** to extract (e.g., `.article-body`, `h1`).
-    *   `ignore_selectors`: The CSS selectors for content you want to **remove before** extraction (e.g., `nav`, `footer`, `.ads`).
-*   **Outputs**:
-    *   `extracted_text`: A batch of strings containing the text from the targeted elements.
-    *   `image_urls`: A batch of image URLs found *only within* the targeted elements.
 
 ### Automation/Image
 
 #### 🖼️ Load Image From URL
 *Category: `Automation/Image`*
-
 Downloads one or more images from URLs and prepares them as a standard ComfyUI `IMAGE` batch.
-
-*   **Inputs**:
-    *   `image_url`: A single URL string or a batch of URL strings.
-    *   `resize_mode`: Determines how to handle images of different sizes. `Don't Resize (First Image Only)` is not batch-compatible. Other options include `Stretch`, `Crop (Center)`, and `Pad (Black)`.
-    *   `target_width` / `target_height`: The uniform dimensions for the output image batch.
-*   **Outputs**:
-    *   `IMAGE`: A standard ComfyUI image batch tensor.
-    *   `MASK`: A corresponding mask batch tensor.
 
 #### 🖼️ Layered Image Processor
 *Category: `Automation/Image`*
-
 Creates a layered image effect by placing a padded version of an image on top of a blurred, full-screen version of the same image. Fully batch-aware.
-
-*   **Inputs**:
-    *   `image`: The source image or image batch.
-    *   `width` / `height`: The dimensions of the final output canvas.
-    *   `blur_radius`: The strength of the Gaussian blur on the background layer.
-    *   `resampling_method`: The algorithm for resizing (`LANCZOS`, `BICUBIC`, etc.).
-*   **Outputs**:
-    *   `image`: A batch of images with the layered effect applied.
 
 #### ✍️ Text on Image
 *Category: `Automation/Image`*
-
 Draws text onto an image with various formatting options. Intelligently handles batches of images and/or text.
 
+#### 🖼️🎭 Image Selector by Index
+*Category: `Automation/Image`*
+Selects and loads a batch of images from a directory based on a corresponding batch of indices (numbers). This is the key node for creating emotion-driven character animations.
+
 *   **Inputs**:
-    *   `image`: The image or image batch to draw on.
-    *   `text`: The text string or batch of strings to draw.
-    *   `font_name`, `font_size`, `font_color`: Standard font styling options.
-    *   `horizontal_align`, `vertical_align`, `margin`, `x_position`, `y_position`: Powerful controls for positioning the text.
+    *   `index_batch`: A list of integers (e.g., from an LLM via `String to Integer`) used to select the images.
+    *   `directory_path`: The path to the folder containing your numbered image assets.
+    *   `file_pattern`: The naming pattern for your files. Use `{}` as a placeholder for the index number (e.g., `face_{}.png`).
+    *   `fallback_image` (Optional): An image to use if a numbered file is not found, preventing errors.
 *   **Outputs**:
-    *   `image`: The image batch with text applied.
+    *   `image_batch`: The batch of selected images, resized to be compatible.
+    *   `mask_batch`: The corresponding masks for the selected images.
 
 ### Automation/Video
 
 #### 🎬 SRT Parser
 *Category: `Automation/Video`*
-
-Parses SRT (subtitle) formatted text to extract timing and content for video creation.
+Parses SRT (subtitle) formatted text to extract timing and content. **This node is batch-compatible**; if you feed it a list of SRT strings, its outputs will be nested lists.
 
 *   **Inputs**:
-    *   `srt_content`: The full text of an `.srt` file.
-    *   `handle_pauses`: `Include Pauses` creates blank entries for silent gaps to maintain perfect timing. `Ignore Pauses` extracts only the dialogue.
+    *   `srt_content`: The full text of an `.srt` file, or a batch of SRT strings.
+    *   `handle_pauses`: `Include Pauses` creates blank entries for silent gaps to maintain perfect timing.
 *   **Outputs**:
-    *   `text_batch`: The text content of each subtitle/pause.
-    *   `start_ms_batch`, `end_ms_batch`, `duration_ms_batch`: Timing data for each section in milliseconds.
+    *   `text_batch`, `start_ms_batch`, `end_ms_batch`, `duration_ms_batch`: The core data from the script.
     *   `section_count`: A total count of all outputted sections (subtitles + pauses).
 
 #### 🎞️ SRT Scene Generator
 *Category: `Automation/Video`*
-
-Generates a timeline of blank frames based on timing data from the `SRT Parser`. This creates the foundational "video canvas".
+Generates a timeline of blank frames based on timing data. **This node expects a flat list of durations.** If using a batched `SRT Parser`, you must use a `List Flattener` node first.
 
 *   **Inputs**:
-    *   `duration_ms_batch`: Connect the `duration_ms_batch` from the `SRT Parser`.
+    *   `duration_ms_batch`: A **flat** list of durations in milliseconds.
     *   `fps`, `width`, `height`: Standard video settings.
 *   **Outputs**:
     *   `image_timeline`: A single, long batch of blank frames representing the entire video duration.
-    *   `start_frame_indices`: The starting frame number for each scene.
-    *   `frame_counts`: The number of frames in each scene.
+    *   `start_frame_indices`, `frame_counts`: Critical timing data for assembling your video content.
 
 #### 🔂 Image Batch Repeater
 *Category: `Automation/Video`*
-
-The core assembly node. It takes a batch of content images and repeats them according to a list of frame counts, creating a video timeline.
+The core assembly node for images. It takes a batch of content images and repeats each one according to a list of frame counts.
 
 *   **Inputs**:
-    *   `image`: A batch of content images (e.g., generated from the `text_batch` of the SRT Parser).
-    *   `repeat_counts`: The list of frame durations. Connect the `frame_counts` from the `SRT Scene Generator` here.
+    *   `image`: A batch of content images (e.g., character faces).
+    *   `repeat_counts`: The list of frame durations. Connect `frame_counts` from `SRT Scene Generator` here.
 *   **Outputs**:
-    *   `image_timeline`: A finished video timeline with your content correctly placed and timed.
+    *   `image_timeline`: A finished video timeline with your images correctly placed and timed.
+
+#### 🔂 Mask Batch Repeater
+*Category: `Automation/Video`*
+The dedicated assembly node for masks. It takes a batch of masks and repeats each one according to a list of frame counts. Use this in parallel with the `Image Batch Repeater`.
+
+*   **Inputs**:
+    *   `mask`: A batch of masks (e.g., for character faces).
+    *   `repeat_counts`: The list of frame durations. Connect `frame_counts` from `SRT Scene Generator` here.
+*   **Outputs**:
+    *   `mask_timeline`: A finished mask timeline, perfectly synchronized with the image timeline.
+
+#### 🔊 Audio Reactive Paster
+*Category: `Automation/Video`*
+Pastes an overlay image onto a background video, with its position animated by the amplitude of an audio signal.
+
+*   **Inputs**:
+    *   `background_image`, `overlay_image`, `overlay_mask`, `audio`, `fps`: Core inputs.
+    *   `x_strength` / `y_strength`: Controls motion amount. **Use negative values to invert the direction.**
+    *   `smoothing_method`: Choose between `Gaussian`, `EMA`, or `SMA` for different motion styles.
+*   **Outputs**:
+    *   `image_timeline`: The final composited video.
+    *   `amplitude_visualization`: A graph of the audio amplitude over time, for debugging and visual feedback.
 
 ### Automation/Utils
 
 #### 📜 Batch to String
 *Category: `Automation/Utils`*
+A utility node to convert a list/batch of strings into a single string.
 
-A utility node to convert a list/batch of strings into a single string. This is a crucial "bridge" for connecting batch outputs to nodes that expect a single string input.
+#### 🔢 String to Integer
+*Category: `Automation/Utils`*
+Converts a string or a batch of strings into integers. It's robust against messy LLM outputs by finding the first number within the text.
 
-*   **Inputs**:
-    *   `string_batch`: A batch of strings (e.g., from the `extracted_text` output of a scraper).
-    *   `separator`: The characters to place between each string when joining them.
-*   **Outputs**:
-    *   `string`: A single string containing all the items from the batch, joined by the separator.
+*   **Use Case**: Place this node after an LLM node to convert its textual number output (e.g., "The emotion is: 3") into a clean integer (`3`) for the `Image Selector by Index` node.
+
+#### 🐍 List Flattener
+*Category: `Automation/Utils`*
+A crucial utility that takes a nested list (e.g., `[[a, b], [c]]`) and "flattens" it into a single, simple list (e.g., `[a, b, c]`).
+
+*   **Use Case**: Place this node after a batched `SRT Parser` and before the `SRT Scene Generator` to ensure the generator receives the clean, flat list of durations it expects.
