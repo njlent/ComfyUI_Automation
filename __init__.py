@@ -14,6 +14,7 @@ NODES_TO_LOAD = {
     "PasteTextOnImageBatch": "✍️ Paste Text on Image Batch",
     "AnimateTextOnImage": "✍️ Animate Text on Image",
     "TransformPaster": "🔧 Transform Paster",
+    "GaussianBlur": "✨ Gaussian Blur",
     "ImageBatchRepeater": "🔂 Image Batch Repeater",
     "MaskBatchRepeater": "🔂 Mask Batch Repeater",
     "LayeredImageProcessor": "🖼️ Layered Image Processor",

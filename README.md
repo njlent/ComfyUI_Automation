@@ -15,6 +15,7 @@ This is a collection of custom nodes for ComfyUI designed to automate and stream
 *   [**Paste Text on Image Batch**](#️-paste-text-on-image-batch)
 *   [**Animate Text on Image**](#️-animate-text-on-image)
 *   [**Transform Paster**](#-transform-paster)
+*   [**Gaussian Blur**](#-gaussian-blur)
 *   [**SRT Parser**](#-srt-parser)
 *   [**SRT Scene Generator**](#️-srt-scene-generator)
 *   [**Image Batch Repeater**](#-image-batch-repeater)
@@ -111,6 +112,14 @@ A comprehensive motion graphics node for creating animated text on a video timel
 A core compositing tool for single images. It takes a background image, an overlay image, and a mask, and provides precise controls for transforming the overlay before pasting.
 *   **Controls**: Full control over `size` (upscaling and downscaling), `rotation`, and final `x_offset`/`y_offset` position.
 *   **Use Case**: Perfect for creating static compositions or preparing elements before they are used in a larger batch or video workflow.
+
+#### ✨ Gaussian Blur
+*Category: `Automation/Image`*
+A simple and efficient node to apply a Gaussian blur effect to an image or a batch of images.
+*   **Inputs**:
+    *   `image`: The image or image batch to be blurred.
+    *   `radius`: A float value to control the strength of the blur effect.
+*   **Output**: A new `IMAGE` batch with the blur applied to every frame.
 
 #### 🖼️🎭 Image Selector by Index
 *Category: `Automation/Image`*

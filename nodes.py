@@ -1245,3 +1245,51 @@ class TransformPaster:
         output_tensor = self._pil_to_tensor(final_pil)
 
         return (output_tensor,)
+    
+class GaussianBlur:
+    CATEGORY = "Automation/Image"
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("image",)
+    FUNCTION = "apply_blur"
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "image": ("IMAGE", {"tooltip": "The image or image batch to apply the blur to."}),
+                "radius": ("FLOAT", {"default": 10.0, "min": 0.0, "max": 500.0, "step": 0.1, "round": 0.01, "tooltip": "The radius of the Gaussian blur. Higher values create a stronger blur effect."}),
+            }
+        }
+    
+    def _tensor_to_pil(self, tensor_frame):
+        return Image.fromarray((tensor_frame.cpu().numpy() * 255).astype(np.uint8))
+
+    def _pil_to_tensor(self, pil_image):
+        return torch.from_numpy(np.array(pil_image).astype(np.float32) / 255.0)
+
+    def apply_blur(self, image, radius):
+        # If radius is zero or negative, no blur is needed. Return original image.
+        if radius <= 0:
+            return (image,)
+            
+        # This list will hold the processed (blurred) frames.
+        blurred_frames = []
+        
+        # Iterate over each image in the batch.
+        for i in range(image.shape[0]):
+            # Convert the current frame (tensor) to a PIL Image.
+            pil_image = self._tensor_to_pil(image[i])
+            
+            # Apply the Gaussian Blur filter.
+            blurred_image = pil_image.filter(ImageFilter.GaussianBlur(radius=radius))
+            
+            # Convert the blurred PIL Image back to a tensor.
+            blurred_tensor_frame = self._pil_to_tensor(blurred_image)
+            
+            # Add the processed frame to our list.
+            blurred_frames.append(blurred_tensor_frame)
+        
+        # Stack the list of processed frames back into a single batch tensor.
+        output_image = torch.stack(blurred_frames)
+        
+        return (output_image,)
