@@ -14,6 +14,7 @@ This is a collection of custom nodes for ComfyUI designed to automate and stream
 *   [**Text on Image**](#️-text-on-image)
 *   [**Paste Text on Image Batch**](#️-paste-text-on-image-batch)
 *   [**Animate Text on Image**](#️-animate-text-on-image)
+*   [**Transform Paster**](#-transform-paster)
 *   [**SRT Parser**](#-srt-parser)
 *   [**SRT Scene Generator**](#️-srt-scene-generator)
 *   [**Image Batch Repeater**](#-image-batch-repeater)
@@ -71,12 +72,19 @@ Downloads one or more images from URLs and prepares them as a standard ComfyUI `
 #### 🖼️ Layered Image Processor
 *Category: `Automation/Image`*
 Creates a layered image effect by placing a scaled version of an image on top of a blurred, full-screen version of the same image. Fully batch-aware.
-*   **New Features**: Includes `x_offset` and `y_offset` inputs to precisely position the foreground layer off-center for more creative compositions.
+*   **Features**: Includes `x_offset` and `y_offset` inputs to precisely position the foreground layer off-center.
 
 #### ✍️ Text on Image
 *Category: `Automation/Image`*
-Draws text directly onto an image with various formatting options. Intelligently handles batches of images and/or text.
-*   **New Features**: Supports automatic `wrap_width` for word wrapping long text blocks. The font dropdown is now populated with fonts available on your system.
+A highly advanced node for drawing stylized static text onto an image. It is fully batch-aware and packed with professional features.
+*   **Emoji Support**: Automatically detects and renders emojis using your system's native emoji font.
+*   **Formatting**: Full control over font, size, color, alignment, and positioning.
+*   **Word Wrap**: `wrap_width` input for automatic word wrapping.
+*   **Line Height**: `line_height_multiplier` for precise control over spacing between lines.
+*   **Styling**:
+    *   `style`: Choose `None`, `Background Block`, `Drop Shadow`, or `Stroke`.
+    *   **Per-Line Background Block**: The background is drawn tightly around each individual line of wrapped text for a clean, modern look.
+    *   Full controls for style color, padding, shadow offset, and stroke width.
 
 #### ✍️ Paste Text on Image Batch
 *Category: `Automation/Image`*
@@ -86,46 +94,37 @@ A powerful compositing node that pastes formatted text onto a background image b
     *   `text`: A list of strings to display.
     *   `text_durations` (Optional): A list of frame counts (e.g., from `SRT Scene Generator`) to control the display duration for each corresponding text in the list.
     *   `wrap_width`: Automatic word wrapping for long text.
-    *   Full alignment, positioning, and font controls.
 
 #### ✍️ Animate Text on Image
 *Category: `Automation/Image`*
-A comprehensive motion graphics node for creating animated text on a video timeline. It can handle batches of text with synchronized timing and features advanced styling options for professional results.
+A comprehensive motion graphics node for creating animated text on a video timeline. It handles batches of text with synchronized timing and features the same advanced styling as the `Text on Image` node.
 *   **Animation**:
     *   `animation_type`: Choose between `Typewriter` (character-by-character) or `Reveal` (word-by-word).
     *   `animation_duration` & `duration_unit`: Precisely control the animation speed in `Frames` or as a `Percent of Text Duration`.
 *   **Timeline Control**:
     *   Takes a `text` list and an optional `text_durations` list to animate multiple text blocks in sequence over a video.
-*   **Styling**:
-    *   `style`: Choose `None`, `Background Block`, or `Drop Shadow`.
-    *   **Per-Line Background Block**: The background block is intelligently drawn around each line of wrapped text individually, preventing ugly empty corners.
-    *   Full controls for style color, padding, shadow offset, and blur.
+*   **Advanced Styling**: Includes all the features of the static `Text on Image` node, such as per-line background blocks, drop shadows, and strokes.
 *   **Memory Efficient**: Designed to handle long, high-resolution videos without running out of RAM.
+
+#### 🔧 Transform Paster
+*Category: `Automation/Image`*
+A core compositing tool for single images. It takes a background image, an overlay image, and a mask, and provides precise controls for transforming the overlay before pasting.
+*   **Controls**: Full control over `size` (upscaling and downscaling), `rotation`, and final `x_offset`/`y_offset` position.
+*   **Use Case**: Perfect for creating static compositions or preparing elements before they are used in a larger batch or video workflow.
 
 #### 🖼️🎭 Image Selector by Index
 *Category: `Automation/Image`*
-Selects and loads a batch of images from a directory based on a corresponding batch of indices (numbers). This is a key node for creating emotion-driven character animations.
-*   **Inputs**:
-    *   `index_batch`: A list of integers (e.g., from an LLM via `String to Integer`) used to select the images.
-    *   `directory_path`: The path to the folder containing your numbered image assets.
-    *   `file_pattern`: The naming pattern for your files. Use `{}` as a placeholder for the index number (e.g., `face_{}.png`).
-    *   `fallback_image` (Optional): An image to use if a numbered file is not found, preventing errors.
-*   **Outputs**:
-    *   `image_batch`: The batch of selected images, resized to be compatible.
-    *   `mask_batch`: The corresponding masks for the selected images.
+Selects and loads a batch of images from a directory based on a corresponding batch of indices (numbers). A key node for creating emotion-driven character animations.
 
 ### Automation/Video
 
 #### 🎬 SRT Parser
 *Category: `Automation/Video`*
-Parses SRT (subtitle) formatted text to extract timing and content. This node is batch-compatible and includes a properly formatted `text_list` output for easy integration with other nodes.
+Parses SRT (subtitle) formatted text to extract timing and content. Batch-compatible with a properly formatted `text_list` output.
 
 #### 🎞️ SRT Scene Generator
 *Category: `Automation/Video`*
 Generates a timeline of blank frames based on a flat list of durations from the `SRT Parser`.
-*   **Outputs**:
-    *   `image_timeline`: A single, long batch of blank frames representing the entire video duration.
-    *   `start_frame_indices`, `frame_counts`: Critical timing data for assembling your video content.
 
 #### 🔂 Image Batch Repeater
 *Category: `Automation/Video`*
@@ -156,7 +155,7 @@ A crucial utility node that solves a common ComfyUI batching problem. It takes a
 A utility node to convert a list/batch of strings into a single string with a custom separator.
 
 #### 🔢 String to Integer
-*Category: `Automation/Utils`*
+*Category. `Automation/Utils`*
 Converts a string or a batch of strings into integers. It's robust against messy LLM outputs by finding the first number within the text.
 
 #### 📜 String Literal to List Converter
