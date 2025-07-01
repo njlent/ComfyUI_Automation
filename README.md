@@ -33,7 +33,7 @@ This is a collection of custom nodes for ComfyUI designed to automate and stream
 1.  Navigate to your `ComfyUI/custom_nodes/` directory.
 2.  Clone this repository into that directory:
     ```bash
-    git clone https://github.com/nj-lent/njlent-comfyui_automation.git ComfyUI_Automation
+    git clone https://github.com/njlent/ComfyUI_Automation ComfyUI_Automation
     ```
     (Or, if you downloaded the files manually, just place the `ComfyUI_Automation` folder here).
 3.  Restart ComfyUI. The ComfyUI-Manager (or the terminal) should detect the `requirements.txt` file and prompt you to install the necessary dependencies (`feedparser`, `requests`, `beautifulsoup4`, `Pillow`, `torchaudio`, `pandas`, `scipy`).
