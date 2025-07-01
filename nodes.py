@@ -1,6 +1,7 @@
 # File: ComfyUI_Automation/nodes.py (Final Version with All Features and Tooltips)
 
 # --- IMPORTS ---
+import platform # Import platform to detect the OS
 import feedparser
 import re
 import json
@@ -16,6 +17,7 @@ import re
 import pandas as pd
 from scipy.ndimage import gaussian_filter1d
 import ast
+import torch
 
 # --- RSS FEEDER NODE ---
 class RssFeedReader:
@@ -194,12 +196,69 @@ class LayeredImageProcessor:
             
         return (torch.cat(output_images, dim=0),)
 
+
 class TextOnImage:
     CATEGORY = "Automation/Image"; RETURN_TYPES = ("IMAGE",); FUNCTION = "draw_text"
     
+    EMOJI_FONT = None
+    EMOJI_FONT_LOADED = False
+    EMOJI_SPLIT_REGEX = re.compile(
+        r'('
+        r'['
+        '\U0001F1E0-\U0001F1FF'
+        '\U0001F300-\U0001F5FF'
+        '\U0001F600-\U0001F64F'
+        '\U0001F680-\U0001F6FF'
+        '\U0001F700-\U0001F77F'
+        '\U0001F780-\U0001F7FF'
+        '\U0001F800-\U0001F8FF'
+        '\U0001F900-\U0001F9FF'
+        '\U0001FA00-\U0001FA6F'
+        '\U0001FA70-\U0001FAFF'
+        '\U00002702-\U000027B0'
+        '\U000024C2-\U0001F251'
+        ']'
+        r')'
+    )
+
+    def _get_emoji_font_path(self):
+        system = platform.system()
+        if system == "Windows":
+            return os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts', 'seguiemj.ttf')
+        elif system == "Darwin":
+            path = "/System/Library/Fonts/Apple Color Emoji.ttc"
+            if os.path.exists(path): return path
+            return "/System/Library/Fonts/Core/AppleColorEmoji.ttf"
+        else: # Linux
+            paths_to_check = [
+                "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+                "/usr/share/fonts/noto-color-emoji/NotoColorEmoji.ttf",
+            ]
+            for path in paths_to_check:
+                if os.path.exists(path): return path
+        return None
+
+    def _load_emoji_font(self, size):
+        if not self.EMOJI_FONT_LOADED:
+            path = self._get_emoji_font_path()
+            if path and os.path.exists(path):
+                try:
+                    self.EMOJI_FONT = ImageFont.truetype(path, size)
+                    print(f"TextOnImage: Loaded emoji font from {path}")
+                except Exception as e:
+                    print(f"TextOnImage: Warning - Could not load emoji font '{path}': {e}")
+                    self.EMOJI_FONT = None
+            else:
+                print("TextOnImage: Warning - No system emoji font found. Emojis may not render correctly.")
+            self.EMOJI_FONT_LOADED = True
+        
+        if self.EMOJI_FONT and self.EMOJI_FONT.size != size:
+             self.EMOJI_FONT = self.EMOJI_FONT.font_variant(size=size)
+
+        return self.EMOJI_FONT
+
     @classmethod
     def INPUT_TYPES(s):
-        # Using a set to find available fonts to avoid duplicates
         font_files = set(["arial.ttf", "verdana.ttf", "tahoma.ttf", "cour.ttf", "times.ttf", "DejaVuSans.ttf", "LiberationSans-Regular.ttf"])
         font_dirs = []
         if os.name == 'nt': font_dirs.append(os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts'))
@@ -208,18 +267,24 @@ class TextOnImage:
             try:
                 if os.path.exists(os.path.expanduser(directory)):
                     for f in os.listdir(os.path.expanduser(directory)):
-                        if f.lower().endswith('.ttf'):
-                            font_files.add(f)
-            except:
-                pass
-
+                        if f.lower().endswith('.ttf'): font_files.add(f)
+            except: pass
         return {"required": {
             "image": ("IMAGE", {"tooltip": "The image or image batch to draw on."}),
-            "text": ("STRING", {"forceInput": True, "tooltip": "The text string or batch of strings to draw."}),
-            "font_name": (sorted(list(font_files)), {"tooltip": "The font file to use. More fonts can be added to your system's font directory."}),
+            "text": ("STRING", {"forceInput": True, "tooltip": "The text string or batch of strings to draw. Emojis are supported!"}),
+            "font_name": (sorted(list(font_files)), {"tooltip": "The font file to use for regular text."}),
             "font_size": ("INT", {"default": 50, "min": 1, "max": 1024, "step": 1, "tooltip": "Font size in pixels."}),
-            "font_color": ("STRING", {"default": "255, 255, 255", "tooltip": "Text color in R, G, B format (e.g., '255, 255, 255' for white)."}),
+            "font_color": ("STRING", {"default": "255, 255, 255", "tooltip": "Text color in R, G, B format."}),
             "wrap_width": ("INT", {"default": 0, "min": 0, "max": 8192, "step": 1, "tooltip": "Maximum width in pixels for text wrapping. Set to 0 to disable wrapping."}),
+            "line_height_multiplier": ("FLOAT", {"default": 1.2, "min": 0.5, "max": 3.0, "step": 0.1, "round": 0.01, "tooltip": "Multiplier for line spacing."}),
+            
+            # --- NEW STYLING INPUTS ---
+            "style": (["None", "Background Block", "Drop Shadow", "Stroke"], {"default": "None"}),
+            "style_color": ("STRING", {"default": "0, 0, 0, 128", "tooltip": "R,G,B,A format for the chosen style."}),
+            "bg_padding": ("INT", {"default": 10, "min": 0, "max": 200, "step": 1, "tooltip": "Padding for the Background Block."}),
+            "shadow_offset": ("INT", {"default": 5, "min": -100, "max": 100, "step": 1, "tooltip": "Offset for the Drop Shadow."}),
+            "stroke_width": ("INT", {"default": 2, "min": 0, "max": 50, "step": 1, "tooltip": "Width of the text stroke."}),
+
             "x_position": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1, "tooltip": "Horizontal nudge from the aligned position."}),
             "y_position": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1, "tooltip": "Vertical nudge from the aligned position."}),
             "horizontal_align": (["left", "center", "right"], {"tooltip": "Horizontal alignment anchor for the text block."}),
@@ -236,76 +301,145 @@ class TextOnImage:
             if os.path.exists(font_path): return font_path
         print(f"ComfyUI_Automation: Font '{font_name}' not found. Falling back to default."); return "DejaVuSans.ttf"
 
-    def _wrap_text(self, text: str, font: ImageFont.FreeTypeFont, max_width: int, draw: ImageDraw.ImageDraw) -> str:
-        """Helper function to wrap text to a specific pixel width."""
-        lines = []
-        words = text.split()
-        if not words:
-            return ""
+    def _parse_color(self, color_string, default_color):
+        try:
+            parts = [int(c.strip()) for c in color_string.split(',')]
+            if len(parts) == 3: parts.append(255) # Add full alpha if missing for styles
+            return tuple(parts)
+        except:
+            return default_color
 
+    def _get_text_size(self, draw, text, main_font, emoji_font):
+        if emoji_font is None:
+            return draw.textbbox((0,0), text, font=main_font)
+        
+        total_width = 0; min_y = float('inf'); max_y = float('-inf')
+        parts = self.EMOJI_SPLIT_REGEX.split(text)
+        for part in parts:
+            if not part: continue
+            font = emoji_font if self.EMOJI_SPLIT_REGEX.match(part) else main_font
+            try:
+                bbox = draw.textbbox((0,0), part, font=font)
+                total_width += bbox[2] - bbox[0]
+                min_y = min(min_y, bbox[1])
+                max_y = max(max_y, bbox[3])
+            except TypeError: pass
+        max_height = max_y - min_y if min_y != float('inf') else 0
+        return (0, 0, total_width, max_height)
+
+    def _wrap_text(self, text: str, main_font: ImageFont.FreeTypeFont, emoji_font: ImageFont.FreeTypeFont, max_width: int, draw: ImageDraw.ImageDraw) -> str:
+        lines = []
+        words = text.split(' ')
+        if not words: return ""
         current_line = words[0]
         for word in words[1:]:
-            # Test if adding the new word exceeds the max_width
             test_line = f"{current_line} {word}"
-            # Use textbbox to get the width of the line. Index 2 is the 'right' coordinate.
-            if draw.textbbox((0, 0), test_line, font=font)[2] <= max_width:
+            line_width = self._get_text_size(draw, test_line, main_font, emoji_font)[2]
+            if line_width <= max_width:
                 current_line = test_line
             else:
-                lines.append(current_line)
-                current_line = word
+                lines.append(current_line); current_line = word
         lines.append(current_line)
         return "\n".join(lines)
+    
+    def _draw_text_chunked(self, draw, pos, text, main_font, emoji_font, fill, **kwargs):
+        """Helper to draw a line of mixed text/emoji content."""
+        x, y = pos
+        parts = self.EMOJI_SPLIT_REGEX.split(text)
+        for part in parts:
+            if not part: continue
+            is_emoji = self.EMOJI_SPLIT_REGEX.match(part)
+            font_to_use = emoji_font if is_emoji and emoji_font else main_font
+            
+            # Pass stroke arguments if they exist
+            stroke_width = kwargs.get('stroke_width', 0)
+            stroke_fill = kwargs.get('stroke_fill', None)
+            
+            draw.text((x, y), part, font=font_to_use, fill=fill, embedded_color=True, stroke_width=stroke_width, stroke_fill=stroke_fill)
+            part_width = self._get_text_size(draw, part, main_font, emoji_font)[2]
+            x += part_width
 
-    def draw_text(self, image, text, font_name, font_size, font_color, wrap_width, x_position, y_position, horizontal_align, vertical_align, margin):
+    def draw_text(self, image, text, font_name, font_size, font_color, wrap_width, line_height_multiplier, style, style_color, bg_padding, shadow_offset, stroke_width, x_position, y_position, horizontal_align, vertical_align, margin):
         num_images = image.shape[0]; text_list = [text] if isinstance(text, str) else text; num_texts = len(text_list)
         loop_count = max(num_images, num_texts)
         if num_images > 1 and num_texts > 1: loop_count = min(num_images, num_texts)
         
         font_path = self.find_font(font_name)
-        try: font = ImageFont.truetype(font_path, font_size)
-        except IOError: font = ImageFont.load_default()
-        try: color_tuple = tuple(map(int, font_color.split(',')))
-        except: color_tuple = (255, 255, 255)
+        try: main_font = ImageFont.truetype(font_path, font_size)
+        except IOError: main_font = ImageFont.load_default()
         
+        main_color_tuple = self._parse_color(font_color, (255, 255, 255))
+        style_color_tuple = self._parse_color(style_color, (0, 0, 0, 255))
+        
+        emoji_font = self._load_emoji_font(font_size)
+
         output_images = []
         for i in range(loop_count):
             img_tensor = image[i % num_images]
             text_to_draw = text_list[i % num_texts] if text_list else ""
             
-            pil_image = Image.fromarray((img_tensor.cpu().numpy() * 255).astype(np.uint8))
+            pil_image = Image.fromarray((img_tensor.cpu().numpy() * 255).astype(np.uint8)).convert("RGBA")
             draw = ImageDraw.Draw(pil_image)
             
-            # --- APPLY WORD WRAPPING IF ENABLED ---
-            if wrap_width > 0:
-                final_text = self._wrap_text(text_to_draw, font, wrap_width, draw)
-            else:
-                final_text = text_to_draw
+            final_text = self._wrap_text(text_to_draw, main_font, emoji_font, wrap_width, draw) if wrap_width > 0 else text_to_draw
             
             img_width, img_height = pil_image.size
+            lines = final_text.split('\n')
             
-            # Get the bounding box of the (potentially multi-lined) text block
-            try: bbox = draw.textbbox((0, 0), final_text, font=font)
-            except AttributeError: bbox = (0,0,0,0) # Fallback for older Pillow versions
-            
-            text_width = bbox[2] - bbox[0]
-            text_height = bbox[3] - bbox[1]
-            
-            # Calculate position based on alignment, margin, and offset
-            if horizontal_align == "left": x = margin
-            elif horizontal_align == "right": x = img_width - text_width - margin
-            else: x = (img_width - text_width) / 2 # center
-            
-            if vertical_align == "top": y = margin
-            elif vertical_align == "bottom": y = img_height - text_height - margin
-            else: y = (img_height - text_height) / 2 # center
-            
-            # Apply final user-defined nudge
-            x += x_position
-            y += y_position
+            single_line_height = self._get_text_size(draw, "hg", main_font, emoji_font)[3]
+            adjusted_line_height = single_line_height * line_height_multiplier
 
-            # Draw the text on the image
-            draw.text((x, y), final_text, font=font, fill=color_tuple)
-            output_images.append(torch.from_numpy(np.array(pil_image).astype(np.float32) / 255.0))
+            total_block_width = 0
+            for line in lines:
+                total_block_width = max(total_block_width, self._get_text_size(draw, line, main_font, emoji_font)[2])
+            total_block_height = adjusted_line_height * (len(lines) -1) + single_line_height if lines else 0
+
+            if vertical_align == "top": y_start = margin
+            elif vertical_align == "bottom": y_start = img_height - total_block_height - margin
+            else: y_start = (img_height - total_block_height) / 2
+            y_start += y_position
+            
+            current_y = y_start
+            for line in lines:
+                line_width = self._get_text_size(draw, line, main_font, emoji_font)[2]
+
+                if horizontal_align == "left": x_start = margin
+                elif horizontal_align == "right": x_start = img_width - total_block_width - margin
+                else: x_start = (img_width - total_block_width) / 2
+                x_start += x_position
+
+                # Adjust line position for alignment
+                line_x_offset = 0
+                if horizontal_align == "center":
+                    line_x_offset = (total_block_width - line_width) / 2
+                elif horizontal_align == "right":
+                    line_x_offset = total_block_width - line_width
+                
+                line_pos = (x_start + line_x_offset, current_y)
+                
+                # Draw Styles
+                if style == "Background Block":
+                    bg_x0 = line_pos[0] - bg_padding
+                    bg_y0 = line_pos[1] - bg_padding
+                    bg_x1 = line_pos[0] + line_width + bg_padding
+                    bg_y1 = line_pos[1] + single_line_height + bg_padding
+                    draw.rectangle([bg_x0, bg_y0, bg_x1, bg_y1], fill=style_color_tuple)
+
+                elif style == "Drop Shadow":
+                    shadow_pos = (line_pos[0] + shadow_offset, line_pos[1] + shadow_offset)
+                    self._draw_text_chunked(draw, shadow_pos, line, main_font, emoji_font, fill=style_color_tuple)
+
+                elif style == "Stroke":
+                    self._draw_text_chunked(draw, line_pos, line, main_font, emoji_font, fill=main_color_tuple, stroke_width=stroke_width, stroke_fill=style_color_tuple)
+
+                # Draw Main Text
+                if style != "Stroke": # If stroking, the main fill is already done
+                    self._draw_text_chunked(draw, line_pos, line, main_font, emoji_font, fill=main_color_tuple)
+
+                current_y += adjusted_line_height
+            
+            final_image = pil_image.convert("RGB")
+            output_images.append(torch.from_numpy(np.array(final_image).astype(np.float32) / 255.0))
             
         return (torch.stack(output_images),)
 
@@ -1040,7 +1174,6 @@ class TransformPaster:
 
     @classmethod
     def INPUT_TYPES(s):
-        # Using a list from a previous node's class definition for consistency
         resampling_methods = ["LANCZOS", "BICUBIC", "BILINEAR", "NEAREST"]
         
         return {
@@ -1052,60 +1185,62 @@ class TransformPaster:
                 "rotation": ("FLOAT", {"default": 0.0, "min": -360.0, "max": 360.0, "step": 0.1, "round": 0.01, "tooltip": "Rotation of the overlay in degrees."}),
                 "x_offset": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1, "tooltip": "Final horizontal position (from center) of the overlay."}),
                 "y_offset": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1, "tooltip": "Final vertical position (from center) of the overlay."}),
-                "interpolation": (resampling_methods, {"default": "LANCZOS", "tooltip": "The resampling filter to use for transformations. LANCZOS is high quality."}),
+                "interpolation": (resampling_methods, {"default": "LANCZOS", "tooltip": "The resampling filter to use for resizing. LANCZOS is high quality."}),
             }
         }
 
-    def _tensor_to_pil(self, tensor):
-        # Takes a single frame from a tensor batch
-        return Image.fromarray((tensor[0].cpu().numpy() * 255).astype(np.uint8))
+    def _tensor_to_pil(self, tensor, is_mask=False):
+        if tensor is None: return None
+        image_tensor = tensor[0] 
+        if is_mask:
+            image_tensor = image_tensor.unsqueeze(-1)
+        np_array = (image_tensor.cpu().numpy() * 255).astype(np.uint8)
+        if np_array.shape[-1] == 1:
+            np_array = np_array.squeeze(-1)
+        return Image.fromarray(np_array)
 
     def _pil_to_tensor(self, pil_image):
         return torch.from_numpy(np.array(pil_image).astype(np.float32) / 255.0).unsqueeze(0)
 
     def process(self, background_image, overlay_image, overlay_mask, size, rotation, x_offset, y_offset, interpolation):
-        # Convert tensors to PIL Images
         bg_pil = self._tensor_to_pil(background_image)
         overlay_pil = self._tensor_to_pil(overlay_image)
-        mask_pil = self._tensor_to_pil(overlay_mask.unsqueeze(-1).repeat(1, 1, 3)) # Convert mask to 3-channel for PIL
+        mask_pil = self._tensor_to_pil(overlay_mask, is_mask=True)
+
+        if bg_pil is None or overlay_pil is None or mask_pil is None:
+            return (torch.zeros((1, 64, 64, 3)),)
 
         resampling_filter = getattr(Image.Resampling, interpolation, Image.Resampling.LANCZOS)
 
-        # Combine overlay and mask into a single RGBA image
         overlay_rgba = overlay_pil.convert("RGBA")
-        overlay_rgba.putalpha(mask_pil.getchannel('L'))
+        overlay_rgba.putalpha(mask_pil)
 
-        # 1. Scale the overlay
+        # 1. Scale the overlay using the user-selected filter
         if overlay_rgba.width > 0 and overlay_rgba.height > 0:
             aspect_ratio = overlay_rgba.width / overlay_rgba.height
             if overlay_rgba.width >= overlay_rgba.height:
-                new_w = size
-                new_h = max(1, int(new_w / aspect_ratio))
+                new_w, new_h = size, max(1, int(size / aspect_ratio))
             else:
-                new_h = size
-                new_w = max(1, int(new_h * aspect_ratio))
+                new_h, new_w = size, max(1, int(size * aspect_ratio))
             overlay_rgba = overlay_rgba.resize((new_w, new_h), resample=resampling_filter)
 
         # 2. Rotate the scaled overlay
-        # 'expand=True' is crucial to prevent the corners from being clipped off.
         if rotation != 0:
-            overlay_rgba = overlay_rgba.rotate(rotation, resample=resampling_filter, expand=True)
+            # --- START OF FIX ---
+            # Use a high-quality filter that is supported by .rotate()
+            rotation_filter = Image.Resampling.BICUBIC
+            overlay_rgba = overlay_rgba.rotate(rotation, resample=rotation_filter, expand=True)
+            # --- END OF FIX ---
             
         # 3. Paste onto the background
-        # Ensure background is RGBA for proper alpha compositing
         bg_rgba = bg_pil.convert("RGBA")
         
-        # Calculate the top-left corner for pasting, so the center is at the offset
-        canvas_center_x = bg_rgba.width // 2
-        canvas_center_y = bg_rgba.height // 2
-        
+        canvas_center_x, canvas_center_y = bg_rgba.width // 2, bg_rgba.height // 2
         paste_x = canvas_center_x + x_offset - (overlay_rgba.width // 2)
         paste_y = canvas_center_y + y_offset - (overlay_rgba.height // 2)
 
-        # The 'mask' argument for paste with an RGBA source is the alpha channel of the source itself.
         bg_rgba.paste(overlay_rgba, (paste_x, paste_y), mask=overlay_rgba)
 
-        # Convert back to RGB for standard ComfyUI output and then to a tensor
         final_pil = bg_rgba.convert("RGB")
         output_tensor = self._pil_to_tensor(final_pil)
 
