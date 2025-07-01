@@ -144,6 +144,7 @@ class LoadImageFromURL:
 class LayeredImageProcessor:
     CATEGORY = "Automation/Image"; RETURN_TYPES = ("IMAGE",); RETURN_NAMES = ("image",); FUNCTION = "process_image"
     RESAMPLING_METHODS = {"LANCZOS": Image.Resampling.LANCZOS, "BICUBIC": Image.Resampling.BICUBIC, "BILINEAR": Image.Resampling.BILINEAR, "NEAREST": Image.Resampling.NEAREST}
+    
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
@@ -151,41 +152,81 @@ class LayeredImageProcessor:
             "width": ("INT", {"default": 1024, "min": 64, "max": 8192, "step": 8, "tooltip": "The final width of the output canvas."}),
             "height": ("INT", {"default": 576, "min": 64, "max": 8192, "step": 8, "tooltip": "The final height of the output canvas."}),
             "blur_radius": ("FLOAT", {"default": 25.0, "min": 0.0, "max": 200.0, "step": 0.1, "tooltip": "The radius for the Gaussian blur on the background layer."}),
-            "resampling_method": (list(s.RESAMPLING_METHODS.keys()), {"tooltip": "The algorithm used for resizing images. LANCZOS is high quality."})
+            "resampling_method": (list(s.RESAMPLING_METHODS.keys()), {"tooltip": "The algorithm used for resizing images. LANCZOS is high quality."}),
+            
+            # --- NEW OFFSET INPUTS ---
+            "x_offset": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1, "tooltip": "Horizontal offset for the foreground image."}),
+            "y_offset": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1, "tooltip": "Vertical offset for the foreground image."}),
         }}
     
     def _tensor_to_pil(self, t): return Image.fromarray((t.cpu().numpy() * 255).astype(np.uint8))
     def _pil_to_tensor(self, p): return torch.from_numpy(np.array(p).astype(np.float32) / 255.0).unsqueeze(0)
     
-    def process_image(self, image, width, height, blur_radius, resampling_method):
-        resampling_filter = self.RESAMPLING_METHODS.get(resampling_method, Image.Resampling.LANCZOS); output_images = []
+    def process_image(self, image, width, height, blur_radius, resampling_method, x_offset, y_offset):
+        resampling_filter = self.RESAMPLING_METHODS.get(resampling_method, Image.Resampling.LANCZOS);
+        output_images = []
+        
         for img_tensor in image:
             pil_image = self._tensor_to_pil(img_tensor)
+            
+            # Create the blurred background, fit to canvas size
             background_img = ImageOps.fit(pil_image.copy(), (width, height), resampling_filter)
-            if blur_radius > 0: background_img = background_img.filter(ImageFilter.GaussianBlur(radius=blur_radius))
-            overlay_img = pil_image.copy(); overlay_img.thumbnail((width, height), resampling_filter)
-            paste_x = (width - overlay_img.width) // 2; paste_y = (height - overlay_img.height) // 2
-            background_img.paste(overlay_img, (paste_x, paste_y), mask=overlay_img.getchannel('A') if 'A' in overlay_img.getbands() else None)
+            if blur_radius > 0:
+                background_img = background_img.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+            
+            # Create the foreground layer, scaled down to fit within the canvas while maintaining aspect ratio
+            overlay_img = pil_image.copy()
+            overlay_img.thumbnail((width, height), resampling_filter)
+            
+            # Calculate the centered paste position
+            paste_x = (width - overlay_img.width) // 2
+            paste_y = (height - overlay_img.height) // 2
+
+            # --- APPLY THE OFFSETS ---
+            # Add the user-defined offsets to the centered position
+            final_paste_x = paste_x + x_offset
+            final_paste_y = paste_y + y_offset
+
+            # Paste the overlay onto the background at the final calculated position
+            background_img.paste(overlay_img, (final_paste_x, final_paste_y), mask=overlay_img.getchannel('A') if 'A' in overlay_img.getbands() else None)
+            
             output_images.append(self._pil_to_tensor(background_img))
+            
         return (torch.cat(output_images, dim=0),)
 
 class TextOnImage:
     CATEGORY = "Automation/Image"; RETURN_TYPES = ("IMAGE",); FUNCTION = "draw_text"
+    
     @classmethod
     def INPUT_TYPES(s):
-        font_files = ["arial.ttf", "verdana.ttf", "tahoma.ttf", "cour.ttf", "times.ttf", "DejaVuSans.ttf", "LiberationSans-Regular.ttf"]
+        # Using a set to find available fonts to avoid duplicates
+        font_files = set(["arial.ttf", "verdana.ttf", "tahoma.ttf", "cour.ttf", "times.ttf", "DejaVuSans.ttf", "LiberationSans-Regular.ttf"])
+        font_dirs = []
+        if os.name == 'nt': font_dirs.append(os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts'))
+        elif os.name == 'posix': font_dirs.extend(['/usr/share/fonts/truetype/', '/usr/local/share/fonts/', '~/.fonts/', '/System/Library/Fonts/', '/Library/Fonts/'])
+        for directory in font_dirs:
+            try:
+                if os.path.exists(os.path.expanduser(directory)):
+                    for f in os.listdir(os.path.expanduser(directory)):
+                        if f.lower().endswith('.ttf'):
+                            font_files.add(f)
+            except:
+                pass
+
         return {"required": {
             "image": ("IMAGE", {"tooltip": "The image or image batch to draw on."}),
             "text": ("STRING", {"forceInput": True, "tooltip": "The text string or batch of strings to draw."}),
-            "font_name": (font_files, {"tooltip": "The font file to use. Must be installed on your system."}),
+            "font_name": (sorted(list(font_files)), {"tooltip": "The font file to use. More fonts can be added to your system's font directory."}),
             "font_size": ("INT", {"default": 50, "min": 1, "max": 1024, "step": 1, "tooltip": "Font size in pixels."}),
             "font_color": ("STRING", {"default": "255, 255, 255", "tooltip": "Text color in R, G, B format (e.g., '255, 255, 255' for white)."}),
+            "wrap_width": ("INT", {"default": 0, "min": 0, "max": 8192, "step": 1, "tooltip": "Maximum width in pixels for text wrapping. Set to 0 to disable wrapping."}),
             "x_position": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1, "tooltip": "Horizontal nudge from the aligned position."}),
             "y_position": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1, "tooltip": "Vertical nudge from the aligned position."}),
             "horizontal_align": (["left", "center", "right"], {"tooltip": "Horizontal alignment anchor for the text block."}),
             "vertical_align": (["top", "center", "bottom"], {"tooltip": "Vertical alignment anchor for the text block."}),
             "margin": ("INT", {"default": 20, "min": 0, "max": 1024, "step": 1, "tooltip": "Padding from the edge of the image for alignment."})
         }}
+
     def find_font(self, font_name):
         font_dirs = [];
         if os.name == 'nt': font_dirs.append(os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts'))
@@ -194,32 +235,219 @@ class TextOnImage:
             font_path = os.path.join(os.path.expanduser(directory), font_name)
             if os.path.exists(font_path): return font_path
         print(f"ComfyUI_Automation: Font '{font_name}' not found. Falling back to default."); return "DejaVuSans.ttf"
-    def draw_text(self, image, text, font_name, font_size, font_color, x_position, y_position, horizontal_align, vertical_align, margin):
-        # ... (rest of the function logic is unchanged)
+
+    def _wrap_text(self, text: str, font: ImageFont.FreeTypeFont, max_width: int, draw: ImageDraw.ImageDraw) -> str:
+        """Helper function to wrap text to a specific pixel width."""
+        lines = []
+        words = text.split()
+        if not words:
+            return ""
+
+        current_line = words[0]
+        for word in words[1:]:
+            # Test if adding the new word exceeds the max_width
+            test_line = f"{current_line} {word}"
+            # Use textbbox to get the width of the line. Index 2 is the 'right' coordinate.
+            if draw.textbbox((0, 0), test_line, font=font)[2] <= max_width:
+                current_line = test_line
+            else:
+                lines.append(current_line)
+                current_line = word
+        lines.append(current_line)
+        return "\n".join(lines)
+
+    def draw_text(self, image, text, font_name, font_size, font_color, wrap_width, x_position, y_position, horizontal_align, vertical_align, margin):
         num_images = image.shape[0]; text_list = [text] if isinstance(text, str) else text; num_texts = len(text_list)
         loop_count = max(num_images, num_texts)
         if num_images > 1 and num_texts > 1: loop_count = min(num_images, num_texts)
+        
         font_path = self.find_font(font_name)
         try: font = ImageFont.truetype(font_path, font_size)
         except IOError: font = ImageFont.load_default()
         try: color_tuple = tuple(map(int, font_color.split(',')))
         except: color_tuple = (255, 255, 255)
+        
         output_images = []
         for i in range(loop_count):
-            img_tensor = image[i % num_images]; text_to_draw = text_list[i % num_texts] if text_list else ""
-            pil_image = Image.fromarray((img_tensor.cpu().numpy() * 255).astype(np.uint8)); draw = ImageDraw.Draw(pil_image)
+            img_tensor = image[i % num_images]
+            text_to_draw = text_list[i % num_texts] if text_list else ""
+            
+            pil_image = Image.fromarray((img_tensor.cpu().numpy() * 255).astype(np.uint8))
+            draw = ImageDraw.Draw(pil_image)
+            
+            # --- APPLY WORD WRAPPING IF ENABLED ---
+            if wrap_width > 0:
+                final_text = self._wrap_text(text_to_draw, font, wrap_width, draw)
+            else:
+                final_text = text_to_draw
+            
             img_width, img_height = pil_image.size
-            try: bbox = draw.textbbox((0, 0), text_to_draw, font=font)
-            except AttributeError: bbox = (0,0,0,0)
-            text_width, text_height = bbox[2] - bbox[0], bbox[3] - bbox[1]
-            if horizontal_align == "left": x = margin + x_position
-            elif horizontal_align == "right": x = img_width - text_width - margin + x_position
-            else: x = (img_width - text_width) / 2 + x_position
-            if vertical_align == "top": y = margin + y_position
-            elif vertical_align == "bottom": y = img_height - text_height - margin + y_position
-            else: y = (img_height - text_height) / 2 + y_position
-            draw.text((x, y), text_to_draw, font=font, fill=color_tuple)
+            
+            # Get the bounding box of the (potentially multi-lined) text block
+            try: bbox = draw.textbbox((0, 0), final_text, font=font)
+            except AttributeError: bbox = (0,0,0,0) # Fallback for older Pillow versions
+            
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+            
+            # Calculate position based on alignment, margin, and offset
+            if horizontal_align == "left": x = margin
+            elif horizontal_align == "right": x = img_width - text_width - margin
+            else: x = (img_width - text_width) / 2 # center
+            
+            if vertical_align == "top": y = margin
+            elif vertical_align == "bottom": y = img_height - text_height - margin
+            else: y = (img_height - text_height) / 2 # center
+            
+            # Apply final user-defined nudge
+            x += x_position
+            y += y_position
+
+            # Draw the text on the image
+            draw.text((x, y), final_text, font=font, fill=color_tuple)
             output_images.append(torch.from_numpy(np.array(pil_image).astype(np.float32) / 255.0))
+            
+        return (torch.stack(output_images),)
+
+class PasteTextOnImageBatch:
+    CATEGORY = "Automation/Image"
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("image",)
+    FUNCTION = "paste_text"
+    
+    @classmethod
+    def INPUT_TYPES(s):
+        font_files = set(["arial.ttf", "verdana.ttf", "tahoma.ttf", "cour.ttf", "times.ttf", "DejaVuSans.ttf", "LiberationSans-Regular.ttf"])
+        font_dirs = []
+        if os.name == 'nt': font_dirs.append(os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts'))
+        elif os.name == 'posix': font_dirs.extend(['/usr/share/fonts/truetype/', '/usr/local/share/fonts/', '~/.fonts/', '/System/Library/Fonts/', '/Library/Fonts/'])
+        for directory in font_dirs:
+            try:
+                if os.path.exists(os.path.expanduser(directory)):
+                    for f in os.listdir(os.path.expanduser(directory)):
+                        if f.lower().endswith('.ttf'):
+                            font_files.add(f)
+            except: pass
+
+        return {
+            "required": {
+                "background_image": ("IMAGE", {"tooltip": "The image or image batch to paste the text onto."}),
+                "text": ("STRING", {"forceInput": True, "tooltip": "The text string or batch of strings to display."}),
+                "font_name": (sorted(list(font_files)), {"tooltip": "The font file to use."}),
+                "font_size": ("INT", {"default": 50, "min": 1, "max": 1024, "step": 1}),
+                "font_color": ("STRING", {"default": "255, 255, 255, 255", "tooltip": "Text color in R, G, B, A format."}),
+                "wrap_width": ("INT", {"default": 0, "min": 0, "max": 8192, "step": 1}),
+                "x_position": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1}),
+                "y_position": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1}),
+                "horizontal_align": (["left", "center", "right"],),
+                "vertical_align": (["top", "center", "bottom"],),
+                "margin": ("INT", {"default": 20, "min": 0, "max": 1024, "step": 1})
+            },
+            # --- NEW OPTIONAL INPUT ---
+            "optional": {
+                "text_durations": ("INT", {"forceInput": True, "tooltip": "A list of frame counts to control the duration of each text. If provided, the sum should match the background frame count."})
+            }
+        }
+
+    # Helper methods are unchanged
+    def find_font(self, font_name):
+        font_dirs = [];
+        if os.name == 'nt': font_dirs.append(os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts'))
+        elif os.name == 'posix': font_dirs.extend(['/usr/share/fonts/truetype/', '/usr/local/share/fonts/', '~/.fonts/', '/System/Library/Fonts/', '/Library/Fonts/'])
+        for directory in font_dirs:
+            font_path = os.path.join(os.path.expanduser(directory), font_name)
+            if os.path.exists(font_path): return font_path
+        print(f"ComfyUI_Automation: Font '{font_name}' not found. Falling back to default."); return "DejaVuSans.ttf"
+
+    def _wrap_text(self, text: str, font: ImageFont.FreeTypeFont, max_width: int, draw: ImageDraw.ImageDraw) -> str:
+        lines = []
+        words = text.split()
+        if not words: return ""
+        current_line = words[0]
+        for word in words[1:]:
+            test_line = f"{current_line} {word}"
+            if draw.textbbox((0, 0), test_line, font=font)[2] <= max_width:
+                current_line = test_line
+            else: lines.append(current_line); current_line = word
+        lines.append(current_line)
+        return "\n".join(lines)
+
+    def paste_text(self, background_image, text, font_name, font_size, font_color, wrap_width, x_position, y_position, horizontal_align, vertical_align, margin, text_durations=None):
+        num_bg_frames = background_image.shape[0]
+        text_list = [text] if isinstance(text, str) else text
+        num_texts = len(text_list)
+        
+        # --- NEW DURATION LOGIC ---
+        use_duration_logic = False
+        text_index_map = []
+        if text_durations is not None and isinstance(text_durations, list) and text_durations:
+            use_duration_logic = True
+            print("PasteTextOnImage: Using text duration logic.")
+            
+            # Create a mapping from frame number to text index
+            for text_idx, duration in enumerate(text_durations):
+                text_index_map.extend([text_idx] * duration)
+            
+            if len(text_index_map) != num_bg_frames:
+                print(f"Warning: Sum of text_durations ({len(text_index_map)}) does not match background frame count ({num_bg_frames}). Text timing may be incorrect.")
+
+        # --- END OF NEW LOGIC ---
+
+        font_path = self.find_font(font_name)
+        try: font = ImageFont.truetype(font_path, font_size)
+        except IOError: font = ImageFont.load_default()
+        
+        try:
+            color_parts = [int(c.strip()) for c in font_color.split(',')]
+            if len(color_parts) == 3: color_parts.append(255)
+            color_tuple = tuple(color_parts)
+        except: color_tuple = (255, 255, 255, 255)
+        
+        output_images = []
+        # Loop over every frame of the background image
+        for i in range(num_bg_frames):
+            bg_tensor = background_image[i]
+
+            # Determine which text to use for the current frame
+            if use_duration_logic:
+                # Use the pre-calculated map to find the correct text index
+                if i < len(text_index_map):
+                    text_index_to_use = text_index_map[i]
+                else:
+                    text_index_to_use = text_index_map[-1] # Use last text if durations are too short
+                text_to_draw = text_list[text_index_to_use % num_texts] # Modulo for safety if text list is shorter than durations
+            else:
+                # Default behavior: cycle through texts frame by frame
+                text_to_draw = text_list[i % num_texts]
+
+            # The rest of the logic remains the same
+            bg_pil = Image.fromarray((bg_tensor.cpu().numpy() * 255).astype(np.uint8)).convert("RGBA")
+            text_layer = Image.new('RGBA', bg_pil.size, (0, 0, 0, 0))
+            draw = ImageDraw.Draw(text_layer)
+            
+            final_text = self._wrap_text(text_to_draw, font, wrap_width, draw) if wrap_width > 0 else text_to_draw
+            
+            layer_width, layer_height = text_layer.size
+            try: bbox = draw.textbbox((0, 0), final_text, font=font)
+            except AttributeError: bbox = (0,0,0,0)
+            
+            text_width, text_height = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            
+            if horizontal_align == "left": x = margin
+            elif horizontal_align == "right": x = layer_width - text_width - margin
+            else: x = (layer_width - text_width) / 2
+            
+            if vertical_align == "top": y = margin
+            elif vertical_align == "bottom": y = layer_height - text_height - margin
+            else: y = (layer_height - text_height) / 2
+            
+            x += x_position
+            y += y_position
+            
+            draw.text((x, y), final_text, font=font, fill=color_tuple)
+            composited_image = Image.alpha_composite(bg_pil, text_layer).convert("RGB")
+            output_images.append(torch.from_numpy(np.array(composited_image).astype(np.float32) / 255.0))
+            
         return (torch.stack(output_images),)
 
 # --- SRT VIDEO NODES ---
@@ -227,25 +455,21 @@ class SRTParser:
     CATEGORY = "Automation/Video"
     FUNCTION = "parse_srt"
     
-    # --- START OF THE DEFINITIVE FIX ---
-
-    # 1. Define the original 5 outputs PLUS the new 6th output.
+    ### --- PROACTIVE BUG FIX --- ###
+    # This setup fixes a common issue where ComfyUI misinterprets list outputs.
+    # The new `text_list` output will now work correctly with nodes that expect a list.
     RETURN_TYPES = ("STRING", "INT", "INT", "INT", "INT", "STRING")
     RETURN_NAMES = (
-        "text_batch",         # Original output
+        "text_batch",         # Original (legacy) output
         "start_ms_batch",     # Original output
         "end_ms_batch",       # Original output
         "duration_ms_batch",  # Original output
         "section_count",      # Original output
-        "text_list"           # New, correct list output
+        "text_list"           # New, correctly formatted list output
     )
-
-    # 2. This is the most important change. We explicitly tell ComfyUI
-    #    NOT to treat the first 5 outputs as lists, preserving their
-    #    original buggy behavior. We ONLY treat the new 6th output as a list.
+    # This tells ComfyUI to treat only the last output as a proper list.
     OUTPUT_IS_LIST = (False, False, False, False, False, True)
-    
-    # --- END OF THE FIX ---
+    ### --- END OF BUG FIX --- ###
 
     @classmethod
     def INPUT_TYPES(s):
@@ -259,7 +483,6 @@ class SRTParser:
         return (h * 3600 + m * 60 + s) * 1000 + ms
 
     def parse_srt(self, srt_content, handle_pauses):
-        # The function logic remains identical.
         p = re.compile(r'(\d+)\n(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})\n([\s\S]*?(?=\n\n|\Z))')
         tb, sb, eb, db, let = [], [], [], [], 0
         for m in list(p.finditer(srt_content)):
@@ -278,9 +501,7 @@ class SRTParser:
             db.append(e_ms - s_ms)
             let = e_ms
         
-        # 3. The return statement now provides data for all 6 outputs.
-        #    The `tb` list is returned for both the first (buggy) and last (correct) outputs.
-        #    ComfyUI will format them differently based on the OUTPUT_IS_LIST tuple above.
+        # Return data for all 6 outputs. The `tb` list is used for both the old and new text outputs.
         return (tb, sb, eb, db, len(tb), tb)
 
 class SRTSceneGenerator:
@@ -294,7 +515,6 @@ class SRTSceneGenerator:
             "height": ("INT", {"default": 512, "min": 64, "max": 8192, "step": 8, "tooltip": "Height of the video frames."})
         }}
     def generate_scenes(self, duration_ms_batch, fps, width, height):
-        # ... (rest of the function logic is unchanged)
         if not isinstance(duration_ms_batch, list) or not duration_ms_batch: return (torch.zeros((1, height, width, 3)), [0], [0])
         ibl, sfi, fc, cfi = [], [], [], 0
         for d_ms in duration_ms_batch:
@@ -314,7 +534,6 @@ class ImageBatchRepeater:
             "repeat_counts": ("INT", {"forceInput": True, "tooltip": "An integer or a list of integers (like 'frame_counts' from SRT Scene Generator)."}),
         }}
     def repeat_batch(self, image, repeat_counts):
-        # ... (rest of the function logic is unchanged)
         num_images = image.shape[0]; counts_list = [repeat_counts] if isinstance(repeat_counts, int) else repeat_counts; num_counts = len(counts_list)
         if num_images == 0 or num_counts == 0 or not any(c > 0 for c in counts_list):
             h, w = (image.shape[1], image.shape[2]) if num_images > 0 else (512, 512); return (torch.zeros((1, h, w, 3)),)
@@ -332,68 +551,30 @@ class ImageBatchRepeater:
         final_timeline = torch.cat(output_batches, dim=0); return (final_timeline,)
 
 class MaskBatchRepeater:
-    """
-    Repeats a batch of MASKS a specified number of times to create a video timeline.
-    Designed to work with the SRT Scene Generator's 'frame_counts' output.
-    """
-    CATEGORY = "Automation/Video"
-    RETURN_TYPES = ("MASK",)
-    RETURN_NAMES = ("mask_timeline",)
-    FUNCTION = "repeat_batch"
-
+    CATEGORY = "Automation/Video"; RETURN_TYPES = ("MASK",); RETURN_NAMES = ("mask_timeline",); FUNCTION = "repeat_batch"
     @classmethod
     def INPUT_TYPES(s):
-        return {
-            "required": {
-                "mask": ("MASK", {"tooltip": "The mask or batch of masks to repeat."}),
-                "repeat_counts": ("INT", {"forceInput": True, "tooltip": "An integer or a list of integers specifying how many times to repeat each corresponding mask."}),
-            }
-        }
-
+        return {"required": { "mask": ("MASK", {}), "repeat_counts": ("INT", {"forceInput": True}), }}
     def repeat_batch(self, mask, repeat_counts):
-        num_masks = mask.shape[0]
-        counts_list = [repeat_counts] if isinstance(repeat_counts, int) else repeat_counts
-        num_counts = len(counts_list)
-
+        num_masks = mask.shape[0]; counts_list = [repeat_counts] if isinstance(repeat_counts, int) else repeat_counts; num_counts = len(counts_list)
         if num_masks == 0 or num_counts == 0 or not any(c > 0 for c in counts_list):
-            # Return a default empty mask if inputs are invalid
-            h, w = (mask.shape[1], mask.shape[2]) if num_masks > 0 else (64, 64)
-            return (torch.zeros((1, h, w)),)
-
-        # Determine the number of iterations for smart batching
+            h, w = (mask.shape[1], mask.shape[2]) if num_masks > 0 else (64, 64); return (torch.zeros((1, h, w)),)
         loop_count = min(num_masks, num_counts) if num_masks > 1 and num_counts > 1 else max(num_masks, num_counts)
         if num_masks > 1 and num_counts > 1 and num_masks != num_counts:
             print(f"MaskBatchRepeater: Warning! Mismatched batch sizes: Masks {num_masks}, Counts {num_counts}. Using shorter length.")
-
         output_batches = []
         for i in range(loop_count):
-            # Use specific variable names for clarity
-            current_mask_tensor = mask[i % num_masks]
-            current_count = counts_list[i % num_counts]
-            
-            if current_count <= 0:
-                continue
-            
-            # The logic for masks (3 dimensions) is slightly different than for images (4 dimensions)
-            # Unsqueeze adds a dimension, so (H, W) -> (1, H, W)
-            # Repeat then expands the first dimension, resulting in (N, H, W)
-            repeated_batch = current_mask_tensor.unsqueeze(0).repeat(current_count, 1, 1)
-            output_batches.append(repeated_batch)
-
-        if not output_batches:
-            h, w = mask.shape[1], mask.shape[2]
-            return (torch.zeros((1, h, w)),)
-            
-        final_timeline = torch.cat(output_batches, dim=0)
-        print(f"MaskBatchRepeater: Created a new mask timeline of {final_timeline.shape[0]} frames.")
-        
-        return (final_timeline,)
+            current_mask_tensor = mask[i % num_masks]; current_count = counts_list[i % num_counts]
+            if current_count <= 0: continue
+            repeated_batch = current_mask_tensor.unsqueeze(0).repeat(current_count, 1, 1); output_batches.append(repeated_batch)
+        if not output_batches: h, w = mask.shape[1], mask.shape[2]; return (torch.zeros((1, h, w)),)
+        final_timeline = torch.cat(output_batches, dim=0); return (final_timeline,)
 
 class AudioReactivePaster:
     """
-    Pastes an overlay image onto a background video/image batch, with its
-    position animated by the amplitude of an audio signal. Includes multiple advanced
-    smoothing methods for high-quality motion.
+    Pastes an overlay image/timeline onto a background video/image batch, with its
+    position animated by the amplitude of a single audio signal. This node is designed
+    to be a final compositor and will only execute ONCE, even if fed batched inputs.
     """
     CATEGORY = "Automation/Video"
     RETURN_TYPES = ("IMAGE", "IMAGE")
@@ -405,46 +586,25 @@ class AudioReactivePaster:
         return {
             "required": {
                 "background_image": ("IMAGE", {"tooltip": "The base video or image batch to paste onto."}),
-                "overlay_image": ("IMAGE", {"tooltip": "The image to paste. If a batch is provided, only the first image is used."}),
-                "overlay_mask": ("MASK", {"tooltip": "The mask for the overlay image. Only the first mask in a batch is used."}),
-                "audio": ("AUDIO", {"tooltip": "The audio signal to drive the animation."}),
+                "overlay_image": ("IMAGE", {"tooltip": "The image or timeline of images to paste. Should match the background's frame count."}),
+                "overlay_mask": ("MASK", {"tooltip": "The mask or timeline of masks for the overlay. Should match the overlay_image."}),
+                "audio": ("AUDIO", {"tooltip": "The single audio signal to drive the animation for the entire timeline."}),
                 "fps": ("INT", {"default": 24, "min": 1, "max": 120, "tooltip": "MUST match the FPS of your background video timeline."}),
-                
-                # Motion and Position controls
-                "size": ("INT", {"default": 256, "min": 1, "max": 8192, "step": 8, "tooltip": "The target size of the overlay image."}),
-                "horizontal_align": (["left", "center", "right"], {"default": "center", "tooltip": "Horizontal resting position of the overlay."}),
-                "vertical_align": (["top", "center", "bottom"], {"default": "center", "tooltip": "Vertical resting position of the overlay."}),
-                "margin": ("INT", {"default": 0, "min": 0, "max": 1024, "step": 1, "tooltip": "Padding from the edge for alignment."}),
-                "x_offset": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1, "tooltip": "Static horizontal offset from the aligned position."}),
-                "y_offset": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1, "tooltip": "Static vertical offset from the aligned position."}),
-                
-                # --- UPDATED STRENGTH CONTROLS ---
-                "x_strength": ("FLOAT", {
-                    "default": 100.0, 
-                    "min": -2000.0, 
-                    "max": 2000.0, 
-                    "step": 0.1, 
-                    "tooltip": "How much the audio moves the image horizontally. Use negative values to move left."
-                }),
-                "y_strength": ("FLOAT", {
-                    "default": 100.0, 
-                    "min": -2000.0, 
-                    "max": 2000.0, 
-                    "step": 0.1, 
-                    "tooltip": "How much the audio moves the image vertically. Use negative values to move up."
-                }),
-                
-                # Smoothing Controls
-                "smoothing_method": (["Gaussian", "Exponential Moving Average (EMA)", "Simple Moving Average (SMA)", "None"], {
-                    "default": "Gaussian", "tooltip": "The algorithm used to smooth the audio-driven motion."
-                }),
-                "gaussian_sigma": ("FLOAT", {"default": 3.0, "min": 0.1, "max": 50.0, "step": 0.1, "tooltip": "Strength for Gaussian smoothing. Higher = smoother. Recommended: 2-10."}),
-                "ema_span": ("INT", {"default": 10, "min": 1, "max": 200, "step": 1, "tooltip": "Window for EMA smoothing. Higher = smoother but more 'lag'. Recommended: 5-20."}),
-                "sma_window": ("INT", {"default": 3, "min": 1, "max": 50, "step": 1, "tooltip": "Window for Simple Moving Average. Larger values are smoother."})
+                "size": ("INT", {"default": 256, "min": 1, "max": 8192, "step": 8, "tooltip": "The target size (longest side) of the overlay image. Allows for upscaling."}),
+                "horizontal_align": (["left", "center", "right"], {"default": "center"}),
+                "vertical_align": (["top", "center", "bottom"], {"default": "center"}),
+                "margin": ("INT", {"default": 0, "min": 0, "max": 1024, "step": 1}),
+                "x_offset": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1}),
+                "y_offset": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1}),
+                "x_strength": ("FLOAT", {"default": 100.0, "min": -2000.0, "max": 2000.0, "step": 0.1}),
+                "y_strength": ("FLOAT", {"default": 100.0, "min": -2000.0, "max": 2000.0, "step": 0.1}),
+                "smoothing_method": (["Gaussian", "Exponential Moving Average (EMA)", "Simple Moving Average (SMA)", "None"], {"default": "Gaussian"}),
+                "gaussian_sigma": ("FLOAT", {"default": 3.0, "min": 0.1, "max": 50.0, "step": 0.1}),
+                "ema_span": ("INT", {"default": 10, "min": 1, "max": 200, "step": 1}),
+                "sma_window": ("INT", {"default": 3, "min": 1, "max": 50, "step": 1})
             }
         }
 
-    # --- NO CHANGES TO THE LOGIC BELOW THIS LINE ---
     def _tensor_to_pil(self, t): return Image.fromarray((t.cpu().numpy() * 255).astype(np.uint8))
     def _pil_to_tensor_single(self, p): return torch.from_numpy(np.array(p).astype(np.float32) / 255.0)
     def smooth_data(self, d, m, gs, es, sw):
@@ -452,281 +612,200 @@ class AudioReactivePaster:
         elif m == "Exponential Moving Average (EMA)": return pd.Series(d).ewm(span=es, adjust=True).mean().tolist()
         elif m == "Simple Moving Average (SMA)": return pd.Series(d).rolling(window=sw, center=True, min_periods=1).mean().bfill().ffill().tolist()
         return d
+
     def process(self, background_image, overlay_image, overlay_mask, audio, fps, size, horizontal_align, vertical_align, margin, x_offset, y_offset, x_strength, y_strength, smoothing_method, gaussian_sigma, ema_span, sma_window):
-        video_timeline = background_image.clone(); num_video_frames = video_timeline.shape[0]; sample_rate = audio['sample_rate']; waveform = audio['waveform'][0]
+        
+        if isinstance(background_image, list): background_image = background_image[0]
+        if isinstance(overlay_image, list): overlay_image = overlay_image[0]
+        if isinstance(overlay_mask, list): overlay_mask = overlay_mask[0]
+        if isinstance(audio, list): audio = audio[0]
+
+        video_timeline = background_image.clone()
+        num_video_frames = video_timeline.shape[0]
+        num_overlay_frames = overlay_image.shape[0]
+
+        print(f"AudioReactivePaster: Processing a {num_video_frames}-frame timeline.")
+
+        if num_overlay_frames > 1 and num_overlay_frames != num_video_frames:
+            print(f"AudioReactivePaster: Warning! Overlay timeline ({num_overlay_frames} frames) does not match background timeline ({num_video_frames} frames).")
+
+        sample_rate, waveform = audio['sample_rate'], audio['waveform'][0]
         if waveform.shape[0] > 1: waveform = torch.mean(waveform, dim=0, keepdim=True)
         total_audio_samples = waveform.shape[1]; samples_per_frame = int(sample_rate / fps)
+        
         if total_audio_samples < samples_per_frame:
-            print("AudioReactivePaster: FATAL ERROR - Audio clip is shorter than a single video frame. Check audio file.")
-            return (video_timeline, torch.zeros((1, 100, num_video_frames, 3)))
+            print("AudioReactivePaster: FATAL ERROR - Audio clip is shorter than a single video frame."); return (video_timeline, torch.zeros((1, 100, num_video_frames, 3)))
+            
         raw_amplitudes = []
         for i in range(num_video_frames):
-            t_sec = i / fps; s_idx = int(t_sec * sample_rate) % total_audio_samples; s_start = s_idx; s_end = s_start + samples_per_frame
-            chunk = waveform[0, s_start:s_end] if s_end <= total_audio_samples else torch.cat((waveform[0, s_start:], waveform[0, :s_end - total_audio_samples]))
-            raw_amplitudes.append(torch.max(torch.abs(chunk)).item())
+            start_sample = int(i / fps * sample_rate)
+            if start_sample >= total_audio_samples: raw_amplitudes.append(0); continue
+            end_sample = start_sample + samples_per_frame
+            chunk = waveform[0, start_sample:end_sample]
+            raw_amplitudes.append(torch.max(torch.abs(chunk)).item() if chunk.numel() > 0 else 0)
+
         max_amp = max(raw_amplitudes) if raw_amplitudes else 1.0; max_amp = 1.0 if max_amp == 0 else max_amp
         norm_amps = [a / max_amp for a in raw_amplitudes]
         final_amps = self.smooth_data(norm_amps, smoothing_method, gaussian_sigma, ema_span, sma_window)
+        
         viz_img = Image.new('RGB', (num_video_frames, 100), 'white'); viz_draw = ImageDraw.Draw(viz_img)
         for i, amp in enumerate(final_amps): viz_draw.line([(i, 99), (i, 99 - int(amp * 99))], fill='black', width=1)
         viz_tensor = self._pil_to_tensor_single(viz_img).unsqueeze(0)
-        pil_overlay = self._tensor_to_pil(overlay_image[0]); pil_mask = self._tensor_to_pil(overlay_mask[0])
-        pil_overlay.thumbnail((size, size), Image.Resampling.LANCZOS); pil_mask = pil_mask.resize(pil_overlay.size, Image.Resampling.LANCZOS)
+        
         cw, ch = video_timeline.shape[2], video_timeline.shape[1]
+
+        # Process frame by frame internally
         for i in range(num_video_frames):
             bg_pil = self._tensor_to_pil(video_timeline[i]); amp = final_amps[i]
+            
+            overlay_idx = i % num_overlay_frames
+            pil_overlay = self._tensor_to_pil(overlay_image[overlay_idx])
+            pil_mask = self._tensor_to_pil(overlay_mask[i % overlay_mask.shape[0]])
+            
+            ### --- START OF FIX: UPSCALE/DOWNSCALE LOGIC --- ###
+            # Replaces `thumbnail` with logic that allows for upscaling.
+            if pil_overlay.width > 0 and pil_overlay.height > 0: # Avoid division by zero
+                aspect_ratio = pil_overlay.width / pil_overlay.height
+                if pil_overlay.width >= pil_overlay.height:
+                    new_w = size
+                    new_h = max(1, int(new_w / aspect_ratio))
+                else:
+                    new_h = size
+                    new_w = max(1, int(new_h * aspect_ratio))
+                
+                # Use .resize() which can scale both up and down.
+                pil_overlay = pil_overlay.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            ### --- END OF FIX --- ###
+
+            # The mask must always be resized to match the newly resized overlay.
+            pil_mask = pil_mask.resize(pil_overlay.size, Image.Resampling.LANCZOS)
+            
             if horizontal_align == "left": x = margin
             elif horizontal_align == "right": x = cw - pil_overlay.width - margin
             else: x = (cw - pil_overlay.width) // 2
             if vertical_align == "top": y = margin
             elif vertical_align == "bottom": y = ch - pil_overlay.height - margin
             else: y = (ch - pil_overlay.height) // 2
+            
             fx = int(x + x_offset + (amp * x_strength)); fy = int(y + y_offset + (amp * y_strength))
-            bg_pil.paste(pil_overlay, (fx, fy), mask=pil_mask); video_timeline[i] = self._pil_to_tensor_single(bg_pil)
+            bg_pil.paste(pil_overlay, (fx, fy), mask=pil_mask)
+            video_timeline[i] = self._pil_to_tensor_single(bg_pil)
+            
         return (video_timeline, viz_tensor)
 
 # --- UTILITY NODES ---
-# (I moved this down to group it with other manipulation nodes)
 class StringBatchToString:
-    CATEGORY = "Automation/Utils"
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("string",)
-    FUNCTION = "convert"
+    CATEGORY = "Automation/Utils"; RETURN_TYPES, RETURN_NAMES = ("STRING",), ("string",); FUNCTION = "convert"
     @classmethod
-    def INPUT_TYPES(s):
-        return {"required": {
-            "string_batch": ("STRING", {"forceInput": True, "tooltip": "Connect a list/batch of strings here (e.g., from a scraper)."}),
-            "separator": ("STRING", {"multiline": False, "default": "\\n\\n", "tooltip": "The characters to place between each string. Use \\n for a newline."})
-        }}
+    def INPUT_TYPES(s): return {"required": { "string_batch": ("STRING", {"forceInput": True}), "separator": ("STRING", {"multiline": False, "default": "\\n\\n"}) }}
     def convert(self, string_batch, separator):
         s = separator.encode().decode('unicode_escape')
-        if isinstance(string_batch, list): return (s.join(str(i) for i in string_batch),)
-        elif isinstance(string_batch, str): return (string_batch,)
-        return ("",)
+        return (s.join(str(i) for i in string_batch) if isinstance(string_batch, list) else (string_batch if isinstance(string_batch, str) else ""),)
     
 class ImageSelectorByIndex:
-    """
-    Selects and loads a batch of images from a directory based on a
-    corresponding batch of indices (numbers).
-    """
-    CATEGORY = "Automation/Image"
-    RETURN_TYPES = ("IMAGE", "MASK")
-    RETURN_NAMES = ("image_batch", "mask_batch")
-    FUNCTION = "select_images"
-
+    CATEGORY = "Automation/Image"; RETURN_TYPES = ("IMAGE", "MASK"); RETURN_NAMES = ("image_batch", "mask_batch"); FUNCTION = "select_images"
     @classmethod
     def INPUT_TYPES(s):
         return {
             "required": {
-                "index_batch": ("INT", {"forceInput": True, "tooltip": "A list of integers (e.g., from an LLM) used to select the images."}),
-                "directory_path": ("STRING", {"multiline": False, "default": "", "tooltip": "The path to the folder containing your numbered image assets."}),
-                "file_pattern": ("STRING", {"multiline": False, "default": "face_{}.png", "tooltip": "The naming pattern for your files. Use '{}' as a placeholder for the index number."}),
-            },
-            "optional": {
-                "fallback_image": ("IMAGE", {"tooltip": "An optional image to use if a numbered file is not found. If not provided, a black image is used."}),
-            }
+                "index_batch": ("INT", {"forceInput": True}), "directory_path": ("STRING", {"multiline": False, "default": ""}),
+                "file_pattern": ("STRING", {"multiline": False, "default": "face_{}.png"}),
+            }, "optional": { "fallback_image": ("IMAGE", {}), }
         }
-        
-    def _load_image(self, full_path):
-        """Loads a single image and returns its image and mask tensors."""
-        if not os.path.exists(full_path):
-            return None, None
-            
-        i = Image.open(full_path)
-        i = i.convert("RGBA") # Ensure there's an alpha channel
-        
-        image = np.array(i).astype(np.float32) / 255.0
-        image_tensor = torch.from_numpy(image)[None,]
-        
-        img_pil_alpha = i.getchannel('A')
-        mask = np.array(img_pil_alpha).astype(np.float32) / 255.0
-        mask_tensor = torch.from_numpy(mask)
-        
-        return image_tensor[:, :, :, :3], mask_tensor # Return RGB and Mask
-
+    def _load_image(self, fp):
+        if not os.path.exists(fp): return None, None
+        i = Image.open(fp).convert("RGBA")
+        img_arr = np.array(i).astype(np.float32) / 255.0; img_t = torch.from_numpy(img_arr)[None,]
+        mask_arr = np.array(i.getchannel('A')).astype(np.float32) / 255.0; mask_t = torch.from_numpy(mask_arr)
+        return img_t[:, :, :, :3], mask_t
     def select_images(self, index_batch, directory_path, file_pattern, fallback_image=None):
-        # Normalize index_batch to be a list
         indices = [index_batch] if isinstance(index_batch, int) else index_batch
-        
-        output_images = []
-        output_masks = []
-        
-        # Prepare a default fallback if none is provided
-        default_fallback_img = None
-        default_fallback_mask = None
-        if fallback_image is None:
-            # Create a 64x64 transparent pixel as a default fallback
-            default_fallback_img = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
-            default_fallback_mask = torch.zeros((64, 64), dtype=torch.float32)
-
-        for index in indices:
-            try:
-                # Format the filename using the provided pattern and index
-                filename = file_pattern.format(index)
-                full_path = os.path.join(directory_path, filename)
-                
-                img_tensor, mask_tensor = self._load_image(full_path)
-                
-                if img_tensor is not None:
-                    print(f"ImageSelectorByIndex: Loaded '{filename}'")
-                    output_images.append(img_tensor)
-                    output_masks.append(mask_tensor)
-                else:
-                    # File was not found, use a fallback
-                    print(f"ImageSelectorByIndex: Warning! File '{filename}' not found. Using fallback.")
-                    if fallback_image is not None:
-                        # Use the first frame of the provided fallback image
-                        output_images.append(fallback_image[0].unsqueeze(0))
-                        # We don't have a mask for the fallback, so we create an opaque one
-                        output_masks.append(torch.ones((fallback_image.shape[1], fallback_image.shape[2]), dtype=torch.float32))
-                    else:
-                        output_images.append(default_fallback_img)
-                        output_masks.append(default_fallback_mask)
-                        
-            except Exception as e:
-                print(f"ImageSelectorByIndex: Error processing index {index}: {e}")
-                # On error, also use the fallback
-                if fallback_image is not None:
-                    output_images.append(fallback_image[0].unsqueeze(0))
-                    output_masks.append(torch.ones((fallback_image.shape[1], fallback_image.shape[2]), dtype=torch.float32))
-                else:
-                    output_images.append(default_fallback_img)
-                    output_masks.append(default_fallback_mask)
-
-        if not output_images:
-            print("ImageSelectorByIndex: No images were loaded.")
-            return (default_fallback_img, default_fallback_mask.unsqueeze(0))
-
-        # We must resize all images to match the first one to create a valid batch
-        first_h, first_w = output_images[0].shape[1], output_images[0].shape[2]
-        resized_images = [output_images[0]]
-        resized_masks = [output_masks[0]]
-
-        for i in range(1, len(output_images)):
-            img_tensor = output_images[i]
-            mask_tensor = output_masks[i]
-            
-            # Convert to PIL for resizing
-            pil_img = Image.fromarray((img_tensor.squeeze(0).cpu().numpy() * 255).astype(np.uint8))
-            pil_mask = Image.fromarray((mask_tensor.cpu().numpy() * 255).astype(np.uint8))
-            
-            # Resize
-            pil_img = pil_img.resize((first_w, first_h), Image.Resampling.LANCZOS)
-            pil_mask = pil_mask.resize((first_w, first_h), Image.Resampling.LANCZOS)
-            
-            # Convert back to tensor
-            resized_images.append(torch.from_numpy(np.array(pil_img).astype(np.float32) / 255.0).unsqueeze(0))
-            resized_masks.append(torch.from_numpy(np.array(pil_mask).astype(np.float32) / 255.0))
-
-        return (torch.cat(resized_images, dim=0), torch.stack(resized_masks, dim=0))
+        imgs, masks = [], []
+        def_img, def_mask = (torch.zeros((1, 64, 64, 3)), torch.zeros((64, 64))) if fallback_image is None else (fallback_image[0].unsqueeze(0), torch.ones((fallback_image.shape[1], fallback_image.shape[2])))
+        for idx in indices:
+            fn, fp = file_pattern.format(idx), os.path.join(directory_path, file_pattern.format(idx))
+            img_t, mask_t = self._load_image(fp)
+            if img_t is not None: imgs.append(img_t); masks.append(mask_t)
+            else: print(f"ImageSelector: '{fn}' not found. Using fallback."); imgs.append(def_img); masks.append(def_mask)
+        if not imgs: return (def_img, def_mask.unsqueeze(0))
+        fh, fw = imgs[0].shape[1], imgs[0].shape[2]
+        res_imgs, res_masks = [imgs[0]], [masks[0]]
+        for i in range(1, len(imgs)):
+            pil_img = Image.fromarray((imgs[i].squeeze(0).cpu().numpy()*255).astype(np.uint8)).resize((fw, fh), Image.Resampling.LANCZOS)
+            pil_mask = Image.fromarray((masks[i].cpu().numpy()*255).astype(np.uint8)).resize((fw, fh), Image.Resampling.LANCZOS)
+            res_imgs.append(torch.from_numpy(np.array(pil_img).astype(np.float32)/255.0).unsqueeze(0))
+            res_masks.append(torch.from_numpy(np.array(pil_mask).astype(np.float32)/255.0))
+        return (torch.cat(res_imgs, dim=0), torch.stack(res_masks, dim=0))
     
 class StringToInteger:
-    """
-    Converts a string or a batch of strings into an integer or a batch of integers.
-    It intelligently handles non-numeric text.
-    """
-    CATEGORY = "Automation/Utils"
-    RETURN_TYPES = ("INT",)
-    RETURN_NAMES = ("int_output",)
-    FUNCTION = "convert"
-
+    CATEGORY = "Automation/Utils"; RETURN_TYPES = ("INT",); RETURN_NAMES = ("int_output",); FUNCTION = "convert"
     @classmethod
-    def INPUT_TYPES(s):
-        return {
-            "required": {
-                "text": ("STRING", {"forceInput": True, "tooltip": "A string or a batch of strings to convert to integers."}),
-            }
-        }
-
+    def INPUT_TYPES(s): return {"required": { "text": ("STRING", {"forceInput": True}), }}
     def convert(self, text):
-        # Handle a single string input
         if isinstance(text, str):
-            try:
-                # Find all integer numbers in the string
-                numbers = re.findall(r'-?\d+', text)
-                if numbers:
-                    # Return the first number found
-                    result = int(numbers[0])
-                    print(f"StringToInteger: Converted '{text}' -> {result}")
-                    return (result,)
-                else:
-                    # If no numbers are found, return 0
-                    print(f"StringToInteger: No numbers found in '{text}'. Defaulting to 0.")
-                    return (0,)
-            except ValueError:
-                print(f"StringToInteger: Could not convert '{text}' to an integer. Defaulting to 0.")
-                return (0,)
-
-        # Handle a batch (list) of strings
-        elif isinstance(text, list):
-            int_batch = []
-            for item in text:
-                try:
-                    # Find all integer numbers in the string
-                    numbers = re.findall(r'-?\d+', str(item)) # Convert item to string just in case
-                    if numbers:
-                        # Append the first number found
-                        int_batch.append(int(numbers[0]))
-                    else:
-                        # If no numbers are found, append 0
-                        int_batch.append(0)
-                except ValueError:
-                    # If conversion fails for an item, append 0
-                    int_batch.append(0)
-            
-            print(f"StringToInteger: Converted batch of {len(text)} strings to integers.")
-            return (int_batch,)
-            
-        # Fallback for other unexpected types
-        else:
-            print(f"StringToInteger: Received unexpected type '{type(text)}'. Defaulting to 0.")
-            return (0,)
+            nums = re.findall(r'-?\d+', text); return (int(nums[0]),) if nums else (0,)
+        if isinstance(text, list):
+            return ([int(n[0]) if (n := re.findall(r'-?\d+', str(i))) else 0 for i in text],)
+        return (0,)
         
 class StringToListConverter:
+    CATEGORY = "Automation/Converters"; RETURN_TYPES, RETURN_NAMES = ("STRING",), ("STRING_LIST",); FUNCTION = "convert"; OUTPUT_IS_LIST = (True,)
+    @classmethod
+    def INPUT_TYPES(s): return {"required": { "string_literal": ("STRING", {"multiline": True, "forceInput": True}), }}
+    def convert(self, string_literal):
+        s_parse = string_literal[0] if isinstance(string_literal, list) and string_literal else string_literal
+        if not s_parse or not isinstance(s_parse, str): return ([],)
+        try:
+            p_list = ast.literal_eval(s_parse)
+            return ([str(i) for i in p_list],) if isinstance(p_list, list) else ([str(p_list)],)
+        except: return ([],)
+
+class ImageMaskBatchCombiner:
     """
-    This node takes a string that is a Python list literal (e.g., "['a', 'b', 'c']")
-    and converts it into a proper ComfyUI batch/list output. It's robust enough
-    to handle inputs that are either a raw string or a list containing a single string.
+    Takes a list of image/mask batches (from an iterated node) and combines
+    them into a single, unified batch. This node uses INPUT_IS_LIST = True
+    to force ComfyUI to pass the entire list of inputs at once, effectively
+    breaking the execution chain and allowing for proper batching downstream.
     """
-    CATEGORY = "Automation/Converters"
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("STRING_LIST",)
-    FUNCTION = "convert"
-    OUTPUT_IS_LIST = (True,)
+    # This is the most important line. It tells ComfyUI to pass the
+    # entire list of inputs to the function at once, instead of iterating.
+    INPUT_IS_LIST = True
+    
+    CATEGORY = "Automation/Utils"
+    RETURN_TYPES = ("IMAGE", "MASK")
+    RETURN_NAMES = ("combined_image_batch", "combined_mask_batch")
+    FUNCTION = "combine"
 
     @classmethod
     def INPUT_TYPES(s):
         return {
             "required": {
-                "string_literal": ("STRING", {"multiline": True, "forceInput": True}),
+                # The types are still IMAGE and MASK, but ComfyUI will now
+                # automatically package them into a list for our function.
+                "image_batch": ("IMAGE", ),
+                "mask_batch": ("MASK", ),
             }
         }
 
-    def convert(self, string_literal):
-        # THIS IS THE CRUCIAL FIX
-        # First, determine the actual string we need to parse.
-        string_to_parse = ""
-        if isinstance(string_literal, list):
-            if string_literal: # If the list is not empty
-                string_to_parse = string_literal[0]
-        else:
-            string_to_parse = string_literal
+    def combine(self, image_batch: list, mask_batch: list):
+        # Because INPUT_IS_LIST=True, image_batch and mask_batch are GUARANTEED to be lists.
         
-        if not string_to_parse:
-            return ([],) # Return an empty list if there's nothing to parse
-
-        try:
-            # Safely evaluate the string as a Python literal
-            parsed_list = ast.literal_eval(string_to_parse)
+        if not image_batch:
+            print("Combiner: Received empty image list. Returning empty tensors.")
+            return (torch.zeros((1, 64, 64, 3)), torch.zeros((1, 64, 64)))
             
-            # Ensure the result is actually a list
-            if not isinstance(parsed_list, list):
-                return ([str(parsed_list)],)
+        print(f"Combiner: Received a LIST of {len(image_batch)} image batches. Concatenating into a single batch.")
 
-            # Ensure all items in the list are strings, as per RETURN_TYPES
-            string_list = [str(item) for item in parsed_list]
-            return (string_list,)
-        except (ValueError, SyntaxError, TypeError) as e:
-            # Handle cases where the string is not a valid list literal
-            print(f"StringToListConverter Error: Could not parse string '{string_to_parse[:100]}...' as a list. Error: {e}. Returning an empty list.")
-            return ([],)
+        # The ImageSelectorByIndex node already ensures all its outputs are the same size.
+        # We can therefore safely use torch.cat to join the list of tensors into one.
+        try:
+            combined_images = torch.cat(image_batch, dim=0)
+            combined_masks = torch.cat(mask_batch, dim=0)
+            
+            print(f"Combiner: Success! Outputting a single batch of shape {combined_images.shape}.")
+            
+            return (combined_images, combined_masks)
+        except Exception as e:
+            print(f"Combiner Error: Could not concatenate tensors. This can happen if the images have different sizes. Error: {e}")
+            # Fallback to returning the first item to prevent crashing the workflow.
+            return (image_batch[0], mask_batch[0])

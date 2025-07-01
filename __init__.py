@@ -11,13 +11,15 @@ NODES_TO_LOAD = {
     "SRTParser": "🎬 SRT Parser",
     "SRTSceneGenerator": "🎞️ SRT Scene Generator",
     "TextOnImage": "✍️ Text on Image",
+    "PasteTextOnImageBatch": "✍️ Paste Text on Image Batch",
     "ImageBatchRepeater": "🔂 Image Batch Repeater",
     "MaskBatchRepeater": "🔂 Mask Batch Repeater",
     "LayeredImageProcessor": "🖼️ Layered Image Processor",
     "AudioReactivePaster": "🔊 Audio Reactive Paster",
     "ImageSelectorByIndex": "🖼️🎭 Image Selector by Index",
     "StringToInteger": "🔢 String to Integer",
-    "StringToListConverter": "String Literal to List Converter"
+    "StringToListConverter": "🔧 String Literal to List Converter",
+    "ImageMaskBatchCombiner": "🔧 Image/Mask Batch Combiner"
 }
 
 # These will be populated automatically
