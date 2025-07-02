@@ -6,6 +6,7 @@ torchaudio
 pandas
 scipy
 boto3
+psutil
 
 #EXPERIMENTAL
 
