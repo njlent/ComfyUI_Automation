@@ -16,6 +16,7 @@ This is a collection of custom nodes for ComfyUI designed to automate and stream
 *   [**Animate Text on Image**](#️-animate-text-on-image)
 *   [**Transform Paster**](#-transform-paster)
 *   [**Gaussian Blur**](#-gaussian-blur)
+*   [**Webhook Uploader**](#-webhook-uploader)
 *   [**SRT Parser**](#-srt-parser)
 *   [**SRT Scene Generator**](#️-srt-scene-generator)
 *   [**Image Batch Repeater**](#-image-batch-repeater)
@@ -124,6 +125,25 @@ A simple and efficient node to apply a Gaussian blur effect to an image or a bat
 #### 🖼️🎭 Image Selector by Index
 *Category: `Automation/Image`*
 Selects and loads a batch of images from a directory based on a corresponding batch of indices (numbers). A key node for creating emotion-driven character animations.
+
+### Automation/Publishing
+
+#### 🚀 Webhook Uploader
+*Category: `Automation/Publishing`*
+Sends your final video, thumbnail, and description to a third-party automation service like **Make.com** or **Zapier** via a webhook. This is the recommended, secure, and flexible way to upload your content to platforms like TikTok, YouTube, Instagram, etc.
+
+*   **How it Works**:
+    1.  Create an automation in a service like Make.com that starts with a "Webhook" trigger. This will give you a unique URL.
+    2.  In ComfyUI, after your video is saved, connect its `file_path` (from a Save Video node), your description, and an optional thumbnail path to this node.
+    3.  Paste the webhook URL from your automation service into the node.
+    4.  When your workflow runs, this node sends all the data to your automation service, which then handles the secure login and posting to TikTok.
+*   **Inputs**:
+    *   `webhook_url`: The secret URL from your automation service.
+    *   `video_path`: The path to the final video file.
+    *   `description`: The text caption for your post.
+    *   `thumbnail_path` (Optional): The path to a thumbnail image.
+    *   `any_string_1/2` (Optional): Extra text fields for more advanced automations.
+*   **Output**: The response from the webhook server for debugging.
 
 ### Automation/Video
 

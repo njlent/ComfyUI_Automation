@@ -15,6 +15,8 @@ NODES_TO_LOAD = {
     "AnimateTextOnImage": "✍️ Animate Text on Image",
     "TransformPaster": "🔧 Transform Paster",
     "GaussianBlur": "✨ Gaussian Blur",
+    "S3Uploader": "☁️ S3 Uploader",
+    "WebhookUploader": "🚀 Webhook Uploader",
     "ImageBatchRepeater": "🔂 Image Batch Repeater",
     "MaskBatchRepeater": "🔂 Mask Batch Repeater",
     "LayeredImageProcessor": "🖼️ Layered Image Processor",
@@ -59,6 +61,31 @@ for class_name, display_name in NODES_TO_LOAD.items():
 print("###")
 print(f"### \033[34mComfyUI_Automation:\033[0m Successfully loaded {len(NODE_CLASS_MAPPINGS)} out of {len(NODES_TO_LOAD)} nodes.")
 # Export the mappings to ComfyUI
+__all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
+
+print("----------------------------------")
+
+
+# --- Experimental/Optional Nodes ---
+# Try to import nodes from tiktok_nodes.py if it exists and dependencies are met.
+try:
+    from .tiktok_nodes import DirectTikTokUploader
+    
+    # If the import was successful, add the node to our mappings.
+    if DirectTikTokUploader:
+        NODE_CLASS_MAPPINGS["DirectTikTokUploader"] = DirectTikTokUploader
+        NODE_DISPLAY_NAME_MAPPINGS["DirectTikTokUploader"] = "🔥 Direct TikTok Uploader"
+        print("###   \033[93m+ Loaded Optional Node:\033[0m DirectTikTokUploader -> 🔥 Direct TikTok Uploader")
+
+except ImportError:
+    # This will catch if the file doesn't exist or if a dependency within it is missing.
+    pass # Silently fail if optional nodes aren't available.
+except Exception as e:
+    print(f"###   \033[91m- FAILED to load optional TikTok nodes.\033[0m Error: {e}")
+    traceback.print_exc()
+
+# --- Update the final export ---
+# This ensures ComfyUI sees the newly added mappings.
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
 
 print("----------------------------------")

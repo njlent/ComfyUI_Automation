@@ -18,6 +18,9 @@ import pandas as pd
 from scipy.ndimage import gaussian_filter1d
 import ast
 import torch
+import mimetypes
+import boto3 # AWS SDK for Python
+from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 
 # --- RSS FEEDER NODE ---
 class RssFeedReader:
@@ -1293,3 +1296,119 @@ class GaussianBlur:
         output_image = torch.stack(blurred_frames)
         
         return (output_image,)
+    
+class WebhookUploader:
+    CATEGORY = "Automation/Publishing"
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("response_text",)
+    FUNCTION = "send_webhook"
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "webhook_url": ("STRING", {"multiline": False, "tooltip": "The unique webhook URL from your automation service (e.g., Make.com, Zapier)."}),
+                "video_url": ("STRING", {"forceInput": True, "tooltip": "The public URL of the video to be posted (e.g., from an S3 Uploader node)."}),
+                "description": ("STRING", {"multiline": True, "default": "", "tooltip": "The description/caption for the video."}),
+            },
+            "optional": {
+                "thumbnail_url": ("STRING", {"forceInput": True, "tooltip": "Optional: The public URL of the thumbnail image."}),
+                "any_string_1": ("STRING", {"multiline": False, "default": "", "tooltip": "An extra text field you can use in your automation."}),
+                "any_string_2": ("STRING", {"multiline": False, "default": "", "tooltip": "Another extra text field."}),
+            }
+        }
+
+    def send_webhook(self, webhook_url, video_url, description, thumbnail_url="", any_string_1="", any_string_2=""):
+        if not webhook_url:
+            return ("Webhook URL is empty. Skipping.",)
+        
+        # Prepare the JSON data payload
+        payload = {
+            'video_url': video_url,
+            'thumbnail_url': thumbnail_url,
+            'description': description,
+            'any_string_1': any_string_1,
+            'any_string_2': any_string_2
+        }
+        
+        headers = {
+            'Content-Type': 'application/json'
+        }
+
+        try:
+            print(f"WebhookUploader: Sending JSON payload to {webhook_url}")
+            response = requests.post(webhook_url, json=payload, headers=headers)
+            response_text = f"Status Code: {response.status_code}\nResponse: {response.text}"
+            print(f"WebhookUploader: {response_text}")
+            return (response_text,)
+
+        except Exception as e:
+            error_message = f"WebhookUploader: FAILED to send request. Error: {e}"
+            print(error_message)
+            traceback.print_exc()
+            return (error_message,)
+
+class S3Uploader:
+    CATEGORY = "Automation/Publishing"
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("public_url",)
+    FUNCTION = "upload_to_s3"
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "file_path": ("STRING", {"forceInput": True, "tooltip": "The local path of the file (video, image, etc.) to upload."}),
+                "bucket_name": ("STRING", {"multiline": False, "tooltip": "The name of your Amazon S3 bucket."}),
+                "aws_access_key_id": ("STRING", {"multiline": False, "tooltip": "Your AWS Access Key ID."}),
+                "aws_secret_access_key": ("STRING", {"multiline": False, "tooltip": "Your AWS Secret Access Key. Treat this like a password."}),
+                "aws_region": ("STRING", {"multiline": False, "default": "us-east-1", "tooltip": "The AWS region your bucket is in (e.g., 'us-west-2', 'eu-central-1')."}),
+            },
+            "optional": {
+                "object_name": ("STRING", {"multiline": False, "tooltip": "Optional: The desired name for the file in the bucket (including folders, e.g., 'videos/my_vid.mp4'). If empty, the original filename is used."}),
+            }
+        }
+
+    def upload_to_s3(self, file_path, bucket_name, aws_access_key_id, aws_secret_access_key, aws_region, object_name=None):
+        if not all([aws_access_key_id, aws_secret_access_key, bucket_name, aws_region]):
+            return ("Error: AWS credentials, region, and bucket name are all required.",)
+            
+        if not os.path.exists(file_path):
+            return (f"Error: File not found at '{file_path}'.",)
+
+        # If object_name is not specified, use the base filename
+        if not object_name:
+            object_name = os.path.basename(file_path)
+
+        # Create an S3 client
+        s3_client = boto3.client(
+            's3',
+            aws_access_key_id=aws_access_key_id,
+            aws_secret_access_key=aws_secret_access_key,
+            region_name=aws_region
+        )
+
+        try:
+            print(f"S3Uploader: Uploading '{file_path}' to bucket '{bucket_name}' as '{object_name}'...")
+            
+            # The ACL='public-read' makes the file publicly accessible via its URL.
+            s3_client.upload_file(
+                file_path, 
+                bucket_name, 
+                object_name,
+                ExtraArgs={'ACL': 'public-read'}
+            )
+            
+            # Construct the public URL
+            public_url = f"https://{bucket_name}.s3.{aws_region}.amazonaws.com/{object_name}"
+            print(f"S3Uploader: Upload successful. Public URL: {public_url}")
+            
+            return (public_url,)
+
+        except (NoCredentialsError, PartialCredentialsError):
+            return ("Error: AWS credentials not found or incomplete.",)
+        except Exception as e:
+            error_message = f"S3Uploader: FAILED to upload. Error: {e}"
+            print(error_message)
+            traceback.print_exc()
+            return (error_message,)

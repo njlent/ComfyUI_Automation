@@ -4,3 +4,9 @@ beautifulsoup4
 Pillow
 torchaudio
 pandas
+scipy
+boto3
+
+#EXPERIMENTAL
+
+#tiktok-uploader undetected-chromedriver
