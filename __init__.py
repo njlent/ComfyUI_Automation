@@ -24,7 +24,7 @@ NODES_TO_LOAD = {
     "ImageSelectorByIndex": "🖼️🎭 Image Selector by Index",
     "StringToInteger": "🔢 String to Integer",
     "StringToListConverter": "🔧 String Literal to List Converter",
-    "ImageMaskBatchCombiner": "🔧 Image/Mask Batch Combiner"
+    "ImageMaskBatchCombiner": "🔧 Image/Mask Batch Combiner",
     "TimeScheduler": "🕒 Time Scheduler",
 }
 
