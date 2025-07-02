@@ -21,6 +21,8 @@ import torch
 import mimetypes
 import boto3 # AWS SDK for Python
 from botocore.exceptions import NoCredentialsError, PartialCredentialsError
+import datetime
+from pytz import timezone, utc
 
 # --- RSS FEEDER NODE ---
 class RssFeedReader:
@@ -1412,3 +1414,78 @@ class S3Uploader:
             print(error_message)
             traceback.print_exc()
             return (error_message,)
+        
+class TimeScheduler:
+    CATEGORY = "Automation/Time"
+    RETURN_TYPES = ("STRING", "STRING")
+    RETURN_NAMES = ("formatted_date", "formatted_time")
+    FUNCTION = "calculate_time"
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "mode": (["Offset from Current Time", "Next Specific Time"], {"default": "Offset from Current Time"}),
+                "utc_timezone": ("STRING", {"default": "Europe/Berlin", "tooltip": "The target timezone for calculation, e.g., 'America/New_York', 'Europe/London', 'Asia/Tokyo'. See pytz documentation for a full list."}),
+            },
+            "optional": {
+                # Inputs for "Offset" mode
+                "offset_days": ("INT", {"default": 0, "min": 0, "max": 365}),
+                "offset_hours": ("INT", {"default": 0, "min": 0, "max": 23}),
+                "offset_minutes": ("INT", {"default": 0, "min": 0, "max": 59}),
+                
+                # Inputs for "Specific Time" mode
+                "specific_time": ("STRING", {"default": "08:30", "tooltip": "The specific time in HH:MM format to schedule for the next day."}),
+            }
+        }
+
+    def calculate_time(self, mode, utc_timezone, offset_days=0, offset_hours=0, offset_minutes=0, specific_time="08:30"):
+        try:
+            # Get the target timezone object
+            tz = timezone(utc_timezone)
+        except Exception as e:
+            print(f"TimeScheduler Error: Invalid timezone '{utc_timezone}'. Falling back to UTC. Error: {e}")
+            tz = utc
+
+        # Get the current time in the specified timezone
+        now_in_tz = datetime.datetime.now(tz)
+        print(f"TimeScheduler: Current time in {utc_timezone} is {now_in_tz.strftime('%Y-%m-%d %H:%M:%S')}")
+
+        final_datetime = None
+
+        if mode == "Offset from Current Time":
+            # Calculate the offset
+            offset = datetime.timedelta(days=offset_days, hours=offset_hours, minutes=offset_minutes)
+            final_datetime = now_in_tz + offset
+            print(f"TimeScheduler: Applying offset of {offset_days}d {offset_hours}h {offset_minutes}m.")
+        
+        elif mode == "Next Specific Time":
+            try:
+                # Parse the target time
+                target_hour, target_minute = map(int, specific_time.split(':'))
+                
+                # Create a datetime object for the target time today
+                target_time_today = now_in_tz.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
+                
+                # If that time has already passed today, schedule it for tomorrow
+                if now_in_tz > target_time_today:
+                    final_datetime = target_time_today + datetime.timedelta(days=1)
+                    print(f"TimeScheduler: Target time {specific_time} has passed for today. Scheduling for tomorrow.")
+                else:
+                    final_datetime = target_time_today
+                    print(f"TimeScheduler: Scheduling for target time {specific_time} today.")
+
+            except ValueError:
+                print(f"TimeScheduler Error: Invalid 'specific_time' format '{specific_time}'. Must be HH:MM. Using current time.")
+                final_datetime = now_in_tz
+        
+        if final_datetime is None:
+             final_datetime = now_in_tz
+
+        # Format the final datetime into the required strings
+        formatted_date = final_datetime.strftime("%Y-%m-%d")
+        formatted_time = final_datetime.strftime("%H:%M")
+        
+        print(f"TimeScheduler: Calculated schedule - Date: {formatted_date}, Time: {formatted_time}")
+
+        return (formatted_date, formatted_time)

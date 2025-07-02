@@ -25,6 +25,7 @@ NODES_TO_LOAD = {
     "StringToInteger": "🔢 String to Integer",
     "StringToListConverter": "🔧 String Literal to List Converter",
     "ImageMaskBatchCombiner": "🔧 Image/Mask Batch Combiner"
+    "TimeScheduler": "🕒 Time Scheduler",
 }
 
 # These will be populated automatically
@@ -68,6 +69,7 @@ print("----------------------------------")
 
 # --- Experimental/Optional Nodes ---
 # Try to import nodes from tiktok_nodes.py if it exists and dependencies are met.
+
 try:
     from .tiktok_nodes import DirectTikTokUploader, ScheduledTikTokUploader # Add the new node here
     
