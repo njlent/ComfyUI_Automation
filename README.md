@@ -30,6 +30,7 @@ This is a collection of custom nodes for ComfyUI designed to automate and stream
 *   [**String Literal to List Converter**](#-string-literal-to-list-converter)
 *   [**Image/Mask Batch Combiner**](#-imagemask-batch-combiner)
 *   [**Memory Purge**](#-memory-purge)
+### Experimental nodes
 *   [**Direct TikTok Uploader**](#-direct-tiktok-uploader-experimental)
 *   [**Scheduled TikTok Uploader**](#-scheduled-tiktok-uploader-experimental)
 
