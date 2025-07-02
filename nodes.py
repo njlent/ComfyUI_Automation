@@ -700,42 +700,96 @@ class ImageBatchRepeater:
             "image": ("IMAGE", {"tooltip": "The image or batch of images to repeat."}),
             "repeat_counts": ("INT", {"forceInput": True, "tooltip": "An integer or a list of integers (like 'frame_counts' from SRT Scene Generator)."}),
         }}
+
     def repeat_batch(self, image, repeat_counts):
-        num_images = image.shape[0]; counts_list = [repeat_counts] if isinstance(repeat_counts, int) else repeat_counts; num_counts = len(counts_list)
+        num_images, h, w, c = image.shape
+        counts_list = [repeat_counts] if isinstance(repeat_counts, int) else repeat_counts
+        num_counts = len(counts_list)
+
         if num_images == 0 or num_counts == 0 or not any(c > 0 for c in counts_list):
-            h, w = (image.shape[1], image.shape[2]) if num_images > 0 else (512, 512); return (torch.zeros((1, h, w, 3)),)
+            return (torch.zeros((1, h if h > 0 else 512, w if w > 0 else 512, c if c > 0 else 3), dtype=image.dtype, device=image.device),)
+
         loop_count = 1
-        if num_images > 1 or num_counts > 1: loop_count = max(num_images, num_counts)
+        if num_images > 1 or num_counts > 1:
+            loop_count = max(num_images, num_counts)
         if num_images > 1 and num_counts > 1:
-            if num_images != num_counts: print(f"ImageBatchRepeater: Warning! Mismatched batch sizes: {num_images} vs {num_counts}. Using shorter length.")
+            if num_images != num_counts:
+                print(f"ImageBatchRepeater: Warning! Mismatched batch sizes: {num_images} images vs {num_counts} counts. Using shorter length.")
             loop_count = min(num_images, num_counts)
-        output_batches = []
+
+        # --- MEMORY OPTIMIZATION ---
+        # 1. Pre-calculate the total number of frames to allocate memory only once.
+        total_frames = sum(counts_list[i % num_counts] for i in range(loop_count))
+        if total_frames <= 0:
+            return (torch.zeros((1, h, w, c), dtype=image.dtype, device=image.device),)
+        
+        print(f"ImageBatchRepeater: Allocating memory for a single {total_frames}-frame timeline.")
+
+        # 2. Pre-allocate the final tensor on the correct device.
+        final_timeline = torch.empty((total_frames, h, w, c), dtype=image.dtype, device=image.device)
+        
+        # 3. Fill the pre-allocated tensor slice by slice.
+        current_frame_index = 0
         for i in range(loop_count):
-            current_image_tensor = image[i % num_images]; current_count = counts_list[i % num_counts]
-            if current_count <= 0: continue
-            repeated_batch = current_image_tensor.unsqueeze(0).repeat(current_count, 1, 1, 1); output_batches.append(repeated_batch)
-        if not output_batches: h, w = image.shape[1], image.shape[2]; return (torch.zeros((1, h, w, 3)),)
-        final_timeline = torch.cat(output_batches, dim=0); return (final_timeline,)
+            current_image_tensor = image[i % num_images]
+            current_count = counts_list[i % num_counts]
+            
+            if current_count <= 0:
+                continue
+
+            end_frame_index = current_frame_index + current_count
+            # Assign the single image tensor to the slice of the final timeline.
+            # PyTorch broadcasting handles the repetition efficiently.
+            final_timeline[current_frame_index:end_frame_index] = current_image_tensor.unsqueeze(0)
+            current_frame_index = end_frame_index
+        
+        return (final_timeline,)
+
 
 class MaskBatchRepeater:
     CATEGORY = "Automation/Video"; RETURN_TYPES = ("MASK",); RETURN_NAMES = ("mask_timeline",); FUNCTION = "repeat_batch"
     @classmethod
     def INPUT_TYPES(s):
         return {"required": { "mask": ("MASK", {}), "repeat_counts": ("INT", {"forceInput": True}), }}
+
     def repeat_batch(self, mask, repeat_counts):
-        num_masks = mask.shape[0]; counts_list = [repeat_counts] if isinstance(repeat_counts, int) else repeat_counts; num_counts = len(counts_list)
+        num_masks, h, w = mask.shape
+        counts_list = [repeat_counts] if isinstance(repeat_counts, int) else repeat_counts
+        num_counts = len(counts_list)
+
         if num_masks == 0 or num_counts == 0 or not any(c > 0 for c in counts_list):
-            h, w = (mask.shape[1], mask.shape[2]) if num_masks > 0 else (64, 64); return (torch.zeros((1, h, w)),)
-        loop_count = min(num_masks, num_counts) if num_masks > 1 and num_counts > 1 else max(num_masks, num_counts)
-        if num_masks > 1 and num_counts > 1 and num_masks != num_counts:
-            print(f"MaskBatchRepeater: Warning! Mismatched batch sizes: Masks {num_masks}, Counts {num_counts}. Using shorter length.")
-        output_batches = []
+            return (torch.zeros((1, h if h > 0 else 64, w if w > 0 else 64), dtype=mask.dtype, device=mask.device),)
+
+        loop_count = 1
+        if num_masks > 1 or num_counts > 1:
+            loop_count = max(num_masks, num_counts)
+        if num_masks > 1 and num_counts > 1:
+            if num_masks != num_counts:
+                print(f"MaskBatchRepeater: Warning! Mismatched batch sizes: {num_masks} masks vs {num_counts} counts. Using shorter length.")
+            loop_count = min(num_masks, num_counts)
+
+        # --- MEMORY OPTIMIZATION (Identical logic to ImageBatchRepeater) ---
+        total_frames = sum(counts_list[i % num_counts] for i in range(loop_count))
+        if total_frames <= 0:
+            return (torch.zeros((1, h, w), dtype=mask.dtype, device=mask.device),)
+            
+        print(f"MaskBatchRepeater: Allocating memory for a single {total_frames}-frame mask timeline.")
+            
+        final_timeline = torch.empty((total_frames, h, w), dtype=mask.dtype, device=mask.device)
+        
+        current_frame_index = 0
         for i in range(loop_count):
-            current_mask_tensor = mask[i % num_masks]; current_count = counts_list[i % num_counts]
-            if current_count <= 0: continue
-            repeated_batch = current_mask_tensor.unsqueeze(0).repeat(current_count, 1, 1); output_batches.append(repeated_batch)
-        if not output_batches: h, w = mask.shape[1], mask.shape[2]; return (torch.zeros((1, h, w)),)
-        final_timeline = torch.cat(output_batches, dim=0); return (final_timeline,)
+            current_mask_tensor = mask[i % num_masks]
+            current_count = counts_list[i % num_counts]
+
+            if current_count <= 0:
+                continue
+            
+            end_frame_index = current_frame_index + current_count
+            final_timeline[current_frame_index:end_frame_index] = current_mask_tensor.unsqueeze(0)
+            current_frame_index = end_frame_index
+
+        return (final_timeline,)
 
 class AudioReactivePaster:
     """
