@@ -86,9 +86,9 @@ class TargetedWebScraper:
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
-            "url": ("STRING", {"multiline": False, "default": "", "tooltip": "A single URL or batch of URLs."}),
-            "selectors": ("STRING", {"multiline": True, "default": "body", "tooltip": "CSS selectors for content to extract. Use browser 'Inspect' tool to find."}),
-            "ignore_selectors": ("STRING", {"multiline": True, "default": "nav, footer, .ad-container", "tooltip": "CSS selectors for content to remove before extraction. Cleans the page first."})
+            "url": ("STRING", {"multiline": False, "default": "", "tooltip": "A single URL or a batch of URLs to scrape."}),
+            "selectors": ("STRING", {"multiline": True, "default": "body", "tooltip": "CSS selectors for the main content areas you want to extract. Use browser 'Inspect' tool. E.g., .article-body, #main-content"}),
+            "ignore_selectors": ("STRING", {"multiline": True, "default": "nav, footer, .ad-container", "tooltip": "CSS selectors for content to completely remove before extraction. Each on a new line. E.g., to ignore a div with class 'postTitle', add '.postTitle'."})
         }}
     
     def _abs(self, b, l): return urljoin(b, l)
@@ -100,11 +100,20 @@ class TargetedWebScraper:
             try:
                 r = requests.get(s_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10); r.raise_for_status()
                 sp = BeautifulSoup(r.content, 'html.parser')
+                
+                # --- This is the key logic for ignoring elements ---
                 if isl:
-                    for ignored in sp.select(','.join(isl)): ignored.decompose()
+                    # Find all elements matching the ignore_selectors and completely remove them from the page.
+                    for ignored_element in sp.select(','.join(isl)): 
+                        ignored_element.decompose()
+                
+                # Now, find the main content elements in the cleaned-up page.
                 for e in sp.select(','.join(sl)):
+                    # Extract text from the main element.
                     txt = e.get_text(separator=' ', strip=True)
                     if txt: ft.append(txt)
+                    
+                    # Also extract images from within that main element.
                     for i in e.find_all('img'):
                         src = i.get('src')
                         if src:
@@ -160,8 +169,6 @@ class LayeredImageProcessor:
             "height": ("INT", {"default": 576, "min": 64, "max": 8192, "step": 8, "tooltip": "The final height of the output canvas."}),
             "blur_radius": ("FLOAT", {"default": 25.0, "min": 0.0, "max": 200.0, "step": 0.1, "tooltip": "The radius for the Gaussian blur on the background layer."}),
             "resampling_method": (list(s.RESAMPLING_METHODS.keys()), {"tooltip": "The algorithm used for resizing images. LANCZOS is high quality."}),
-            
-            # --- NEW OFFSET INPUTS ---
             "x_offset": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1, "tooltip": "Horizontal offset for the foreground image."}),
             "y_offset": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1, "tooltip": "Vertical offset for the foreground image."}),
         }}
@@ -181,20 +188,41 @@ class LayeredImageProcessor:
             if blur_radius > 0:
                 background_img = background_img.filter(ImageFilter.GaussianBlur(radius=blur_radius))
             
-            # Create the foreground layer, scaled down to fit within the canvas while maintaining aspect ratio
+            # --- START OF FIX: Replaced thumbnail() with robust resize logic ---
+            # Create the foreground layer, scaling it to fit the canvas while maintaining aspect ratio.
+            # This handles both upscaling and downscaling correctly.
             overlay_img = pil_image.copy()
-            overlay_img.thumbnail((width, height), resampling_filter)
-            
+            original_overlay_width, original_overlay_height = overlay_img.size
+
+            # Prevent division by zero if image has no size
+            if original_overlay_height > 0 and height > 0:
+                # Calculate aspect ratios
+                canvas_aspect = width / height
+                image_aspect = original_overlay_width / original_overlay_height
+
+                # Determine the new size for the overlay
+                if image_aspect > canvas_aspect:
+                    # Image is wider than the canvas aspect ratio -> fit to canvas width
+                    new_overlay_width = width
+                    new_overlay_height = int(new_overlay_width / image_aspect)
+                else:
+                    # Image is taller than or same as canvas aspect ratio -> fit to canvas height
+                    new_overlay_height = height
+                    new_overlay_width = int(new_overlay_height * image_aspect)
+
+                # Resize the overlay. The 'resize' method handles both upscaling and downscaling.
+                overlay_img = overlay_img.resize((new_overlay_width, new_overlay_height), resampling_filter)
+            # --- END OF FIX ---
+
             # Calculate the centered paste position
             paste_x = (width - overlay_img.width) // 2
             paste_y = (height - overlay_img.height) // 2
 
-            # --- APPLY THE OFFSETS ---
-            # Add the user-defined offsets to the centered position
+            # Apply the user-defined offsets
             final_paste_x = paste_x + x_offset
             final_paste_y = paste_y + y_offset
 
-            # Paste the overlay onto the background at the final calculated position
+            # Paste the overlay onto the background
             background_img.paste(overlay_img, (final_paste_x, final_paste_y), mask=overlay_img.getchannel('A') if 'A' in overlay_img.getbands() else None)
             
             output_images.append(self._pil_to_tensor(background_img))
