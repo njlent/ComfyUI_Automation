@@ -69,17 +69,21 @@ print("----------------------------------")
 # --- Experimental/Optional Nodes ---
 # Try to import nodes from tiktok_nodes.py if it exists and dependencies are met.
 try:
-    from .tiktok_nodes import DirectTikTokUploader
+    from .tiktok_nodes import DirectTikTokUploader, ScheduledTikTokUploader # Add the new node here
     
-    # If the import was successful, add the node to our mappings.
     if DirectTikTokUploader:
         NODE_CLASS_MAPPINGS["DirectTikTokUploader"] = DirectTikTokUploader
         NODE_DISPLAY_NAME_MAPPINGS["DirectTikTokUploader"] = "🔥 Direct TikTok Uploader"
         print("###   \033[93m+ Loaded Optional Node:\033[0m DirectTikTokUploader -> 🔥 Direct TikTok Uploader")
+    
+    # Add the new mapping for the scheduler node
+    if ScheduledTikTokUploader:
+        NODE_CLASS_MAPPINGS["ScheduledTikTokUploader"] = ScheduledTikTokUploader
+        NODE_DISPLAY_NAME_MAPPINGS["ScheduledTikTokUploader"] = "📅 Scheduled TikTok Uploader"
+        print("###   \033[93m+ Loaded Optional Node:\033[0m ScheduledTikTokUploader -> 📅 Scheduled TikTok Uploader")
 
 except ImportError:
-    # This will catch if the file doesn't exist or if a dependency within it is missing.
-    pass # Silently fail if optional nodes aren't available.
+    pass 
 except Exception as e:
     print(f"###   \033[91m- FAILED to load optional TikTok nodes.\033[0m Error: {e}")
     traceback.print_exc()

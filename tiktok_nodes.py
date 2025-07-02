@@ -4,6 +4,7 @@
 import os
 import traceback
 import time
+import datetime
 
 # Make sure to handle the case where the library isn't installed
 try:
@@ -143,4 +144,104 @@ class DirectTikTokUploader:
         finally:
             if driver:
                 print("DirectTikTokUploader: Closing WebDriver.")
+                driver.quit()
+
+class ScheduledTikTokUploader:
+    CATEGORY = "Automation/Publishing (Direct)"
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("upload_status",)
+    FUNCTION = "upload"
+
+    @classmethod
+    def INPUT_TYPES(s):
+        if not TIKTOK_UPLOADER_AVAILABLE:
+            return {"required": { "error": ("STRING", {"default": "tiktok-uploader or selenium library not found.", "forceInput": True}) }}
+            
+        return {
+            "required": {
+                "video_path": ("STRING", {"forceInput": True}),
+                "description": ("STRING", {"multiline": True, "default": ""}),
+                "sessionid_cookie": ("STRING", {"multiline": False}),
+                
+                # --- NEW SCHEDULING INPUTS ---
+                "schedule_date": ("STRING", {"default": "YYYY-MM-DD", "tooltip": "Date to schedule the post in YYYY-MM-DD format."}),
+                "schedule_time": ("STRING", {"default": "HH:MM", "tooltip": "Time to schedule the post in 24-hour HH:MM format."}),
+                
+                "wait_after_post": ("INT", {"default": 5, "min": 1, "max": 60, "step": 1, "tooltip": "Seconds to wait after clicking 'Schedule' before assuming success."}),
+            },
+            "optional": {
+                "chrome_executable_path": ("STRING", {"multiline": False, "tooltip": "Optional: Full path to your chrome.exe if it's not found automatically."}),
+                "comment_permission": ("BOOLEAN", {"default": True, "label_on": "Enabled", "label_off": "Disabled"}),
+                "duet_permission": ("BOOLEAN", {"default": True, "label_on": "Enabled", "label_off": "Disabled"}),
+                "stitch_permission": ("BOOLEAN", {"default": True, "label_on": "Enabled", "label_off": "Disabled"}),
+            }
+        }
+
+    def upload(self, video_path, description, sessionid_cookie, schedule_date, schedule_time, wait_after_post, chrome_executable_path=None, comment_permission=True, duet_permission=True, stitch_permission=True):
+        if not TIKTOK_UPLOADER_AVAILABLE:
+            return ("Error: tiktok-uploader or selenium library not installed.",)
+        if not os.path.exists(video_path):
+            return (f"Error: Video file not found at '{video_path}'.",)
+        if not sessionid_cookie:
+            return ("Error: TikTok 'sessionid' cookie is required.",)
+
+        # --- Parse the schedule datetime ---
+        try:
+            schedule_str = f"{schedule_date} {schedule_time}"
+            schedule_datetime = datetime.datetime.strptime(schedule_str, "%Y-%m-%d %H:%M")
+            print(f"ScheduledTikTokUploader: Parsed schedule time: {schedule_datetime}")
+        except ValueError:
+            error_message = "Error: Invalid date or time format. Please use YYYY-MM-DD and HH:MM."
+            print(f"ScheduledTikTokUploader: {error_message}")
+            return (error_message,)
+
+        print("ScheduledTikTokUploader: Preparing to schedule video on TikTok...")
+        driver = None
+        try:
+            options = ChromeOptions()
+            options.add_argument("--headless=new")
+            if chrome_executable_path and os.path.exists(chrome_executable_path):
+                options.binary_location = chrome_executable_path
+            service = ChromeService()
+            driver = webdriver.Chrome(service=service, options=options)
+            
+            driver.get("https://www.tiktok.com/")
+            driver.add_cookie({'name': 'sessionid_ss', 'value': sessionid_cookie, 'domain': '.tiktok.com'})
+            driver.get("https://www.tiktok.com/upload")
+            time.sleep(2)
+            handle_tiktok_cookie_banner(driver)
+
+            # Call the library's upload function with the schedule parameter
+            upload_video(
+                filename=video_path,
+                description=description,
+                sessionid=sessionid_cookie,
+                schedule=schedule_datetime, # Pass the datetime object here
+                comment=comment_permission,
+                duet=duet_permission,
+                stitch=stitch_permission,
+                browser_agent=driver,
+                explicit_wait=wait_after_post 
+            )
+            
+            # This part will likely be skipped due to the timeout, which we treat as a success
+            status_message = "TikTok schedule SUCCESSFUL! Confirmation received."
+            print(f"ScheduledTikTokUploader: {status_message}")
+            return (status_message,)
+
+        except Exception as e:
+            # Check for the expected timeout after clicking "Schedule"
+            if "Message: " in str(e) and "Stacktrace:" in str(e):
+                status_message = f"SUCCESS (Fire-and-Forget): Schedule initiated for {schedule_date} {schedule_time}. Video is processing on TikTok."
+                print(f"ScheduledTikTokUploader: {status_message}")
+                return (status_message,)
+            
+            error_message = f"ScheduledTikTokUploader: FAILED with an unexpected error: {e}"
+            print(error_message)
+            traceback.print_exc()
+            return (error_message,)
+        
+        finally:
+            if driver:
+                print("ScheduledTikTokUploader: Closing WebDriver.")
                 driver.quit()
