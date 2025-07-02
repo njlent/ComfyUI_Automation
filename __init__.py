@@ -26,6 +26,7 @@ NODES_TO_LOAD = {
     "StringToListConverter": "🔧 String Literal to List Converter",
     "ImageMaskBatchCombiner": "🔧 Image/Mask Batch Combiner",
     "TimeScheduler": "🕒 Time Scheduler",
+    "MemoryPurge": "🧹 Memory Purge",
 }
 
 # These will be populated automatically

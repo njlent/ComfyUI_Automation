@@ -23,6 +23,7 @@ import boto3 # AWS SDK for Python
 from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 import datetime
 from pytz import timezone, utc
+import gc
 
 # --- RSS FEEDER NODE ---
 class RssFeedReader:
@@ -1571,3 +1572,46 @@ class TimeScheduler:
         print(f"TimeScheduler: Calculated schedule - Date: {formatted_date}, Time: {formatted_time}")
 
         return (formatted_date, formatted_time)
+    
+class MemoryPurge:
+    """
+    A utility node to force Python's garbage collector to run and to empty PyTorch's CUDA cache.
+    This can be useful to free up memory before a particularly memory-intensive operation.
+    It acts as a passthrough node, so it can be inserted anywhere in a workflow.
+    """
+    CATEGORY = "Automation/Utils"
+    RETURN_TYPES = ("*",)
+    RETURN_NAMES = ("passthrough",)
+    FUNCTION = "purge"
+    
+    # This node can accept any input, we just pass it through.
+    INPUT_IS_LIST = True
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                # The "*" means it can accept any input type.
+                "any": ("*",),
+            },
+        }
+
+    def purge(self, any):
+        print("MemoryPurge: Forcing garbage collection...")
+        
+        # Force Python's garbage collector to run
+        gc.collect()
+        
+        # If torch is available and has a CUDA device, empty the cache
+        try:
+            if torch.cuda.is_available():
+                print("MemoryPurge: Emptying CUDA cache...")
+                torch.cuda.empty_cache()
+        except NameError:
+            # torch might not be imported if this is run in a weird context
+            pass
+            
+        print("MemoryPurge: Memory cleanup complete.")
+        
+        # Pass through the original input without modification
+        return (any,)
