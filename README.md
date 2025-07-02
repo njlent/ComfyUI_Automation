@@ -17,16 +17,21 @@ This is a collection of custom nodes for ComfyUI designed to automate and stream
 *   [**Transform Paster**](#-transform-paster)
 *   [**Gaussian Blur**](#-gaussian-blur)
 *   [**Webhook Uploader**](#-webhook-uploader)
+*   [**S3 Uploader**](#-s3-uploader)
 *   [**SRT Parser**](#-srt-parser)
 *   [**SRT Scene Generator**](#️-srt-scene-generator)
 *   [**Image Batch Repeater**](#-image-batch-repeater)
 *   [**Mask Batch Repeater**](#-mask-batch-repeater)
 *   [**Audio Reactive Paster**](#-audio-reactive-paster)
 *   [**Image Selector by Index**](#️-image-selector-by-index)
+*   [**Time Scheduler**](#-time-scheduler)
 *   [**String to Integer**](#-string-to-integer)
 *   [**Batch to String**](#-batch-to-string)
 *   [**String Literal to List Converter**](#-string-literal-to-list-converter)
 *   [**Image/Mask Batch Combiner**](#-imagemask-batch-combiner)
+*   [**Memory Purge**](#-memory-purge)
+*   [**Direct TikTok Uploader**](#-direct-tiktok-uploader-experimental)
+*   [**Scheduled TikTok Uploader**](#-scheduled-tiktok-uploader-experimental)
 
 ---
 
@@ -38,12 +43,17 @@ This is a collection of custom nodes for ComfyUI designed to automate and stream
     git clone https://github.com/njlent/ComfyUI_Automation ComfyUI_Automation
     ```
     (Or, if you downloaded the files manually, just place the `ComfyUI_Automation` folder here).
-3.  Restart ComfyUI. The ComfyUI-Manager (or the terminal) should detect the `requirements.txt` file and prompt you to install the necessary dependencies (`feedparser`, `requests`, `beautifulsoup4`, `Pillow`, `torchaudio`, `pandas`, `scipy`).
+3.  Restart ComfyUI. The ComfyUI-Manager (or the terminal) should detect the `requirements.txt` file and prompt you to install the necessary dependencies (`feedparser`, `requests`, `beautifulsoup4`, `Pillow`, `torchaudio`, `pandas`, `scipy`, `boto3`, `pytz`).
 4.  If the dependencies are not installed automatically, you can install them manually by opening a terminal/command prompt, navigating to your ComfyUI installation, and running:
     ```bash
     pip install -r ComfyUI/custom_nodes/ComfyUI_Automation/requirements.txt
     ```
-5.  Restart ComfyUI one more time after the dependencies are installed. Your new nodes will appear in the "Automation" category when you right-click the canvas.
+5.  **For Experimental TikTok Nodes (Optional):** If you wish to use the direct TikTok uploader nodes, you must install additional dependencies. Run the following command in your terminal:
+    ```bash
+    pip install tiktok-uploader selenium
+    ```
+    **Note:** These nodes are experimental and may break if TikTok changes its website.
+6.  Restart ComfyUI one more time after all dependencies are installed. Your new nodes will appear in the "Automation" category when you right-click the canvas.
 
 ---
 
@@ -63,7 +73,17 @@ A basic scraper that grabs all text and all image links from one or more URLs.
 
 #### 🎯 Targeted Web Scraper
 *Category: `Automation/Web`*
-A powerful scraper that extracts content from specific parts of a page using CSS selectors, with the ability to ignore unwanted elements.
+A powerful scraper that gives you fine-grained control to extract content from specific parts of a web page using CSS selectors, while simultaneously removing unwanted content.
+
+*   **How it works**:
+    1.  First, it finds all elements matching the `ignore_selectors` and completely removes them from the page's code. This is ideal for cleaning out ads, navigation bars, footers, or "related posts" sections.
+    2.  Then, on the cleaned-up page, it finds all elements matching your main `selectors`.
+    3.  Finally, it extracts all the text and image URLs from within those main elements.
+*   **Finding Selectors**: Use your browser's "Inspect" or "Developer Tools" feature. Right-click the element you want to scrape (or ignore) and choose "Inspect". You can then see its tag (like `div`, `p`, `article`) and its attributes (like `class="content-body"` or `id="main"`).
+    *   A class `postTitle` becomes the selector `.postTitle`.
+    *   An ID `main-article` becomes the selector `#main-article`.
+    *   A tag `article` is just `article`.
+*   **Use Case**: You want to scrape the main text of a news article. You set `selectors` to `.article-body`. But the article has annoying "Related Posts" links inside it in a `div` with `class="related-links"`. You add `.related-links` to the `ignore_selectors` input to remove them before the main text is extracted.
 
 ### Automation/Image
 
@@ -73,7 +93,7 @@ Downloads one or more images from URLs and prepares them as a standard ComfyUI `
 
 #### 🖼️ Layered Image Processor
 *Category: `Automation/Image`*
-Creates a layered image effect by placing a scaled version of an image on top of a blurred, full-screen version of the same image. Fully batch-aware.
+Creates a layered image effect by placing a scaled version of an image on top of a blurred, full-screen version of the same image. It correctly handles both upscaling and downscaling to ensure the foreground image always fits the canvas dimensions. Fully batch-aware.
 *   **Features**: Includes `x_offset` and `y_offset` inputs to precisely position the foreground layer off-center.
 
 #### ✍️ Text on Image
@@ -145,6 +165,17 @@ Sends your final video, thumbnail, and description to a third-party automation s
     *   `any_string_1/2` (Optional): Extra text fields for more advanced automations.
 *   **Output**: The response from the webhook server for debugging.
 
+#### ☁️ S3 Uploader
+*Category: `Automation/Publishing`*
+Uploads a local file (like a video or thumbnail) to an Amazon S3 bucket and makes it publicly accessible. This is a powerful way to host your media and get a public URL that can be used by other services, such as the `Webhook Uploader`.
+*   **Inputs**:
+    *   `file_path`: The local path to the file you want to upload.
+    *   `bucket_name`: Your S3 bucket's name.
+    *   `aws_access_key_id` / `aws_secret_access_key`: Your AWS credentials. **Treat these like passwords and do not share them.**
+    *   `aws_region`: The region your bucket is located in (e.g., `us-east-1`).
+    *   `object_name` (Optional): The desired filename in the bucket.
+*   **Output**: The public URL of the uploaded file (e.g., `https://my-bucket.s3.us-east-1.amazonaws.com/my-video.mp4`).
+
 ### Automation/Video
 
 #### 🎬 SRT Parser
@@ -157,11 +188,11 @@ Generates a timeline of blank frames based on a flat list of durations from the 
 
 #### 🔂 Image Batch Repeater
 *Category: `Automation/Video`*
-The core assembly node for images. It takes a batch of content images and repeats each one according to a list of frame counts from `SRT Scene Generator`.
+The core assembly node for images. It takes a batch of content images and repeats each one according to a list of frame counts from `SRT Scene Generator`. This node is heavily memory-optimized to pre-allocate one single block of memory, allowing for the creation of very long video timelines without crashing.
 
 #### 🔂 Mask Batch Repeater
 *Category: `Automation/Video`*
-The dedicated assembly node for masks. Use this in parallel with the `Image Batch Repeater` to create a synchronized mask timeline.
+The dedicated assembly node for masks. Use this in parallel with the `Image Batch Repeater` to create a synchronized mask timeline. This node uses the same memory-efficient logic as the `Image Batch Repeater`.
 
 #### 🔊 Audio Reactive Paster
 *Category: `Automation/Video`*
@@ -172,12 +203,30 @@ Pastes an overlay image (or an image timeline) onto a background video, with its
     *   Advanced smoothing methods (`Gaussian`, `EMA`, `SMA`) for high-quality motion.
     *   Memory efficient design to handle long videos without crashing.
 
+### Automation/Time
+
+#### 🕒 Time Scheduler
+*Category: `Automation/Time`*
+A utility node for calculating future dates and times, perfect for scheduling posts.
+*   **Modes**:
+    *   `Offset from Current Time`: Calculates a future time by adding days, hours, and minutes to the current time.
+    *   `Next Specific Time`: Finds the next occurrence of a specific time (e.g., `08:30`). If the time has already passed today, it schedules for tomorrow.
+*   **Inputs**: A valid timezone (e.g., `America/New_York`, `Europe/London`), and the required offsets or specific time.
+*   **Outputs**: A `formatted_date` (YYYY-MM-DD) and `formatted_time` (HH:MM) string, ready to be used by the `Scheduled TikTok Uploader`.
+
 ### Automation/Utils
 
 #### 🔧 Image/Mask Batch Combiner
 *Category: `Automation/Utils`*
 A crucial utility node that solves a common ComfyUI batching problem. It takes a sequence of individual images/masks (often from an iterated node like `Image Selector by Index`) and merges them into a single, unified batch.
 *   **Use Case**: Place this node **directly after** `Image Selector by Index` and before `Image Batch Repeater` to ensure the rest of your workflow runs only once, producing a single video instead of multiple separate ones.
+
+#### 🧹 Memory Purge
+*Category: `Automation/Utils`*
+A vital utility for managing system resources in very large workflows. This node forces Python's garbage collector to run and clears PyTorch's CUDA cache, freeing up the maximum amount of RAM and VRAM possible.
+*   **Why it's needed**: In a long workflow, previous nodes can leave large amounts of data (like image batches) in memory. This can cause memory allocation errors on resource-heavy nodes, even if you have a lot of RAM.
+*   **How to use**: Insert this node immediately before a node that requires a large amount of memory, such as `Image Batch Repeater`. It acts as a simple passthrough and will not alter the data.
+*   **Example Workflow**: `[Some Node] -> [🧹 Memory Purge] -> [🔂 Image Batch Repeater]`
 
 #### 📜 Batch to String
 *Category: `Automation/Utils`*
@@ -190,3 +239,23 @@ Converts a string or a batch of strings into integers. It's robust against messy
 #### 📜 String Literal to List Converter
 *Category: `Automation/Converters`*
 This node takes a string that is a Python list literal (e.g., `"['a', 'b', 'c']"`) and converts it into a proper ComfyUI batch/list output.
+
+---
+
+## Experimental Nodes
+
+### Automation/Publishing (Direct) (Experimental)
+
+**⚠️ Warning:** These nodes interact directly with TikTok's website by controlling a web browser. They are considered **experimental and fragile**. TikTok frequently changes its website code, which can break these nodes without warning. For reliable, long-term automation, the [**Webhook Uploader**](#-webhook-uploader) method is strongly recommended.
+
+#### 🔥 Direct TikTok Uploader (Experimental)
+*Category: `Automation/Publishing (Direct)`*
+Uploads a video directly to TikTok. This node automates a browser to log in (using your cookie) and perform the upload.
+*   **Requires**: A valid `sessionid` cookie from your TikTok account. You must install `tiktok-uploader` and `selenium` (see installation).
+*   **"Fire-and-Forget"**: Due to the way TikTok processes uploads, this node initiates the post and then "fires and forgets," assuming success after a short wait. It does not wait for full processing confirmation.
+
+#### 📅 Scheduled TikTok Uploader (Experimental)
+*Category: `Automation/Publishing (Direct)`*
+Schedules a video to be posted on TikTok at a future date and time. It uses the same browser automation method as the direct uploader.
+*   **Requires**: Same requirements as the Direct TikTok Uploader.
+*   **Use Case**: Combine with the `Time Scheduler` node to fully automate a content calendar.
