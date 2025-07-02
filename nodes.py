@@ -1575,28 +1575,26 @@ class TimeScheduler:
     
 class MemoryPurge:
     """
-    A utility node to force Python's garbage collector to run and to empty PyTorch's CUDA cache.
-    This can be useful to free up memory before a particularly memory-intensive operation.
-    It acts as a passthrough node, so it can be inserted anywhere in a workflow.
+    A utility node to force garbage collection before a memory-intensive operation.
+    This version is an IMAGE passthrough, designed to be placed on a connection
+    that carries an IMAGE batch.
     """
     CATEGORY = "Automation/Utils"
-    RETURN_TYPES = ("*",)
-    RETURN_NAMES = ("passthrough",)
+    # --- FIX: Define specific input and output types ---
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("image_passthrough",)
     FUNCTION = "purge"
     
-    # This node can accept any input, we just pass it through.
-    INPUT_IS_LIST = True
-
     @classmethod
     def INPUT_TYPES(s):
         return {
             "required": {
-                # The "*" means it can accept any input type.
-                "any": ("*",),
+                # This now explicitly requires an IMAGE type
+                "image": ("IMAGE",),
             },
         }
 
-    def purge(self, any):
+    def purge(self, image): # Changed 'any' to 'image' for clarity
         print("MemoryPurge: Forcing garbage collection...")
         
         # Force Python's garbage collector to run
@@ -1608,10 +1606,9 @@ class MemoryPurge:
                 print("MemoryPurge: Emptying CUDA cache...")
                 torch.cuda.empty_cache()
         except NameError:
-            # torch might not be imported if this is run in a weird context
             pass
             
         print("MemoryPurge: Memory cleanup complete.")
         
-        # Pass through the original input without modification
-        return (any,)
+        # Pass through the original image tensor without modification
+        return (image,)
