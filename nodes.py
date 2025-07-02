@@ -1065,19 +1065,14 @@ class AnimateTextOnImage:
         except: return default_color
 
 
+
     def animate_text(self, background_image, text, animation_type, animation_duration, duration_unit, font_name, font_size, font_color, wrap_width, line_height_multiplier, style, style_color, bg_padding, shadow_offset, stroke_width, x_position, y_position, horizontal_align, vertical_align, margin, text_durations=None):
         
-        # --- MEMORY OPTIMIZATION: Work in-place on the original tensor ---
-        # By removing .clone(), we avoid creating a massive copy of the video in memory.
-        # This is CRITICAL for chaining multiple text animation nodes.
         output_tensor = background_image
-        # --- END OF OPTIMIZATION ---
-        
         num_bg_frames = output_tensor.shape[0]
 
-        # The rest of the method logic remains exactly the same as before.
+        # All setup and timing calculation logic remains correct
         text_list = [text] if isinstance(text, str) else text
-        
         durations = []
         if text_durations is not None:
             if isinstance(text_durations, list): durations = text_durations
@@ -1086,11 +1081,9 @@ class AnimateTextOnImage:
                 except ValueError: durations = [num_bg_frames]
         else:
             durations = [num_bg_frames] * len(text_list)
-
         font_path = self.find_font(font_name)
         try: main_font = ImageFont.truetype(font_path, font_size)
         except IOError: main_font = ImageFont.load_default()
-        
         main_color_tuple = self._parse_color(font_color, (255, 255, 255, 255))
         style_color_tuple = self._parse_color(style_color, (0, 0, 0, 128))
         emoji_font = self._load_emoji_font(font_size)
@@ -1098,7 +1091,6 @@ class AnimateTextOnImage:
 
         frame_to_text_info = {}
         current_frame = 0
-
         for i, text_item in enumerate(text_list):
             if i >= len(durations): break
             display_duration = durations[i]
@@ -1121,18 +1113,23 @@ class AnimateTextOnImage:
                 frame_to_text_info[frame_idx] = {"full_text_layout": final_text, "draw_text": text_to_draw}
             current_frame += display_duration
 
+        # Main Drawing Loop
         canvas_w, canvas_h = output_tensor.shape[2], output_tensor.shape[1]
         for i in range(num_bg_frames):
             text_info = frame_to_text_info.get(i)
             if not (text_info and text_info["draw_text"]): continue
+
             bg_tensor_frame = output_tensor[i]
             bg_pil = Image.fromarray((bg_tensor_frame.cpu().numpy() * 255).astype(np.uint8)).convert("RGBA")
-            draw = ImageDraw.Draw(bg_pil)
+            text_layer = Image.new('RGBA', bg_pil.size, (0, 0, 0, 0))
+            draw = ImageDraw.Draw(text_layer)
+
             full_text_layout, current_text = text_info["full_text_layout"], text_info["draw_text"]
-            full_width, _ = self._get_text_size(draw, full_text_layout, main_font, emoji_font)
-            lines_full, (_, single_line_height) = full_text_layout.split('\n'), self._get_text_size(draw, "hg", main_font, emoji_font)
+            full_width, _ = self._get_text_size(temp_draw, full_text_layout, main_font, emoji_font)
+            lines_full, (_, single_line_height) = full_text_layout.split('\n'), self._get_text_size(temp_draw, "hg", main_font, emoji_font)
             adjusted_line_height = single_line_height * line_height_multiplier
             total_block_height = adjusted_line_height * (len(lines_full) - 1) + single_line_height if lines_full else 0
+            
             if vertical_align == "top": y_start = margin
             elif vertical_align == "bottom": y_start = canvas_h - total_block_height - margin
             else: y_start = (canvas_h - total_block_height) / 2
@@ -1140,20 +1137,45 @@ class AnimateTextOnImage:
             elif horizontal_align == "right": x_start = canvas_w - full_width - margin
             else: x_start = (canvas_w - full_width) / 2
             final_x_base, final_y_base = x_start + x_position, y_start + y_position
-            current_y = final_y_base
-            for line in current_text.split('\n'):
-                line_width, _ = self._get_text_size(draw, line, main_font, emoji_font)
-                line_x_offset = (full_width - line_width) / 2 if horizontal_align == "center" else (full_width - line_width) if horizontal_align == "right" else 0
-                line_pos = (final_x_base + line_x_offset, current_y)
-                if style == "Background Block":
+            
+            lines_to_draw = current_text.split('\n')
+
+            # --- START OF FIX: Final Two-Pass Rendering Logic ---
+
+            # --- PASS 1: Draw background SHAPES only. ---
+            if style == "Background Block":
+                current_y_bg = final_y_base
+                for line in lines_to_draw:
+                    line_width, _ = self._get_text_size(temp_draw, line, main_font, emoji_font)
+                    line_x_offset = (full_width - line_width) / 2 if horizontal_align == "center" else (full_width - line_width) if horizontal_align == "right" else 0
+                    line_pos = (final_x_base + line_x_offset, current_y_bg)
                     draw.rectangle([line_pos[0] - bg_padding, line_pos[1] - bg_padding, line_pos[0] + line_width + bg_padding, line_pos[1] + single_line_height + bg_padding], fill=style_color_tuple)
-                elif style == "Drop Shadow":
-                    self._draw_text_chunked(draw, (line_pos[0] + shadow_offset, line_pos[1] + shadow_offset), line, main_font, emoji_font, fill=style_color_tuple)
+                    current_y_bg += adjusted_line_height
+
+            # --- PASS 2: Draw all TEXT-BASED elements in the correct order. ---
+            current_y_text = final_y_base
+            for line in lines_to_draw:
+                line_width, _ = self._get_text_size(temp_draw, line, main_font, emoji_font)
+                line_x_offset = (full_width - line_width) / 2 if horizontal_align == "center" else (full_width - line_width) if horizontal_align == "right" else 0
+                line_pos = (final_x_base + line_x_offset, current_y_text)
+
+                # A. Draw shadow or stroke layer first.
+                if style == "Drop Shadow":
+                    shadow_pos = (line_pos[0] + shadow_offset, line_pos[1] + shadow_offset)
+                    self._draw_text_chunked(draw, shadow_pos, line, main_font, emoji_font, fill=style_color_tuple)
+                
                 elif style == "Stroke":
-                    self._draw_text_chunked(draw, line_pos, line, main_font, emoji_font, fill=main_color_tuple, stroke_width=stroke_width, stroke_fill=style_color_tuple)
-                if style != "Stroke": self._draw_text_chunked(draw, line_pos, line, main_font, emoji_font, fill=main_color_tuple)
-                current_y += adjusted_line_height
-            composited_image = bg_pil.convert("RGB")
+                    # This draws the "fattened" text to create the outline effect.
+                    self._draw_text_chunked(draw, line_pos, line, main_font, emoji_font, fill=style_color_tuple, stroke_width=stroke_width, stroke_fill=style_color_tuple)
+                
+                # B. ALWAYS draw the main, solid text fill ON TOP of any effect.
+                self._draw_text_chunked(draw, line_pos, line, main_font, emoji_font, fill=main_color_tuple)
+                
+                current_y_text += adjusted_line_height
+
+            # --- END OF FIX ---
+            
+            composited_image = Image.alpha_composite(bg_pil, text_layer).convert("RGB")
             output_tensor[i] = torch.from_numpy(np.array(composited_image).astype(np.float32) / 255.0)
 
         return (output_tensor,)
@@ -1665,3 +1687,361 @@ class MemoryPurge:
         
         # Pass through the original image tensor without modification
         return (image,)
+    
+class GetLastImageFromBatch:
+    """
+    Selects and outputs the very last image from an input image batch.
+    """
+    CATEGORY = "Automation/Image"
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("last_image",)
+    FUNCTION = "get_last"
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "image_batch": ("IMAGE", {"tooltip": "The batch of images (e.g., a video timeline) to get the last frame from."}),
+            }
+        }
+
+    def get_last(self, image_batch):
+        # Check if the input batch is valid and has at least one image
+        if image_batch is None or image_batch.shape[0] == 0:
+            print("GetLastImageFromBatch: Warning - Input image batch is empty. Returning a black image.")
+            # Return a default 64x64 black tensor
+            return (torch.zeros((1, 64, 64, 3), dtype=torch.float32),)
+
+        # Select the last image tensor from the batch.
+        # This removes the batch dimension, resulting in a shape of (height, width, channels).
+        last_image = image_batch[-1]
+        
+        # Add the batch dimension back, so the shape becomes (1, height, width, channels),
+        # which is the correct format for a ComfyUI IMAGE output.
+        last_image_as_batch = last_image.unsqueeze(0)
+        
+        print(f"GetLastImageFromBatch: Selected the last image from a batch of {image_batch.shape[0]}.")
+
+        return (last_image_as_batch,)
+    
+class AnimateGaussianBlur:
+    """
+    Applies a Gaussian blur to a batch of images with a radius that animates linearly
+    from 0 on the first frame to a specified max_radius on the last frame.
+    """
+    CATEGORY = "Automation/Image"
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("image",)
+    FUNCTION = "animate_blur"
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "image": ("IMAGE", {"tooltip": "The image batch (video timeline) to apply the animated blur to."}),
+                "max_radius": ("FLOAT", {"default": 25.0, "min": 0.0, "max": 500.0, "step": 0.1, "round": 0.01, "tooltip": "The maximum blur strength, reached at the last frame of the batch."}),
+            }
+        }
+
+    def _tensor_to_pil(self, tensor_frame):
+        return Image.fromarray((tensor_frame.cpu().numpy() * 255).astype(np.uint8))
+
+    def _pil_to_tensor(self, pil_image):
+        return torch.from_numpy(np.array(pil_image).astype(np.float32) / 255.0)
+
+    def animate_blur(self, image, max_radius):
+        # If max_radius is effectively zero, no blur is needed. Return the original image.
+        if max_radius <= 0:
+            return (image,)
+
+        num_frames = image.shape[0]
+        
+        # If there's no batch or only one frame, we can't animate.
+        # We'll just blur the single frame with the max radius.
+        if num_frames <= 1:
+            pil_image = self._tensor_to_pil(image[0])
+            blurred_image = pil_image.filter(ImageFilter.GaussianBlur(radius=max_radius))
+            blurred_tensor = self._pil_to_tensor(blurred_image).unsqueeze(0)
+            return (blurred_tensor,)
+            
+        print(f"AnimateGaussianBlur: Animating blur from 0 to {max_radius} over {num_frames} frames.")
+        
+        blurred_frames = []
+        
+        # Iterate over each frame in the batch.
+        for i in range(num_frames):
+            # Calculate the progress of the animation (from 0.0 to 1.0)
+            progress = i / (num_frames - 1)
+            
+            # Calculate the blur radius for the current frame
+            current_radius = max_radius * progress
+
+            # If the radius is negligible, don't waste time blurring.
+            if current_radius < 0.01:
+                # We still need to add the original frame to maintain the batch.
+                blurred_frames.append(image[i])
+                continue
+
+            # Convert the current frame (tensor) to a PIL Image.
+            pil_image = self._tensor_to_pil(image[i])
+            
+            # Apply the Gaussian Blur filter with the calculated radius.
+            blurred_image = pil_image.filter(ImageFilter.GaussianBlur(radius=current_radius))
+            
+            # Convert the blurred PIL Image back to a tensor.
+            blurred_tensor_frame = self._pil_to_tensor(blurred_image)
+            
+            # Add the processed frame to our list.
+            blurred_frames.append(blurred_tensor_frame)
+        
+        # Stack the list of processed frames back into a single batch tensor.
+        output_image = torch.stack(blurred_frames)
+        
+        return (output_image,)
+    
+class ImageBatchConcatenator:
+    """
+    A memory-efficient node to concatenate multiple image batches into a single batch.
+    It has one required input and multiple optional inputs for clarity.
+    """
+    CATEGORY = "Automation/Utils"
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("combined_image_batch",)
+    FUNCTION = "concatenate"
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "image_batch_1": ("IMAGE", {"tooltip": "The first image batch. This one is required."}),
+            },
+            "optional": {
+                # Add several optional inputs for user-friendliness
+                "image_batch_2": ("IMAGE", {"tooltip": "An optional second image batch."}),
+                "image_batch_3": ("IMAGE", {"tooltip": "An optional third image batch."}),
+                "image_batch_4": ("IMAGE", {"tooltip": "An optional fourth image batch."}),
+                "image_batch_5": ("IMAGE", {"tooltip": "An optional fifth image batch."}),
+            }
+        }
+
+    def concatenate(self, image_batch_1, image_batch_2=None, image_batch_3=None, image_batch_4=None, image_batch_5=None):
+        # 1. --- Gather all provided batches into a list ---
+        all_batches = [b for b in [image_batch_1, image_batch_2, image_batch_3, image_batch_4, image_batch_5] if b is not None]
+
+        if not all_batches or not any(b.shape[0] > 0 for b in all_batches):
+            print("ImageBatchConcatenator: Warning - No valid image batches provided. Returning a black frame.")
+            return (torch.zeros((1, 64, 64, 3)),)
+
+        # 2. --- Validation and Pre-calculation (same logic as before) ---
+        first_batch = all_batches[0]
+        h, w, c = first_batch.shape[1], first_batch.shape[2], first_batch.shape[3]
+        dtype = first_batch.dtype
+        device = first_batch.device
+        
+        total_frames = 0
+        print("ImageBatchConcatenator: Validating input batches...")
+
+        for i, batch in enumerate(all_batches):
+            if batch.shape[1] != h or batch.shape[2] != w or batch.shape[3] != c:
+                print(f"!!! ERROR: ImageBatchConcatenator - Mismatched dimensions detected!")
+                print(f"    Batch 1 shape: {h}x{w}x{c}")
+                print(f"    Batch {i+1} shape: {batch.shape[1]}x{batch.shape[2]}x{batch.shape[3]}")
+                print(f"    Concatenation aborted. Returning the first batch only.")
+                return (first_batch,)
+            total_frames += batch.shape[0]
+        
+        print(f"ImageBatchConcatenator: Found {len(all_batches)} valid batches. Total frames to combine: {total_frames}.")
+
+        # 3. --- Memory-Efficient Allocation and Concatenation ---
+        try:
+            combined_batch = torch.empty((total_frames, h, w, c), dtype=dtype, device=device)
+            print(f"ImageBatchConcatenator: Successfully allocated memory for the final {total_frames}-frame timeline.")
+        except Exception as e:
+            print(f"!!! ERROR: ImageBatchConcatenator - Failed to allocate memory. Your timeline is likely too large for RAM.")
+            print(f"    Error details: {e}")
+            return (first_batch,)
+
+        current_pos = 0
+        for batch in all_batches:
+            num_frames_in_batch = batch.shape[0]
+            if num_frames_in_batch == 0: continue
+            combined_batch[current_pos : current_pos + num_frames_in_batch] = batch
+            current_pos += num_frames_in_batch
+        
+        print("ImageBatchConcatenator: Concatenation complete.")
+        return (combined_batch,)
+    
+class GreenScreenKeyer:
+    """
+    Generates a mask from a specified key color (e.g., green screen) in a batch of images.
+    Provides controls for threshold and softness for fine-tuning the key.
+    """
+    CATEGORY = "Automation/Image"
+    RETURN_TYPES = ("IMAGE", "MASK")
+    RETURN_NAMES = ("image_out", "mask")
+    FUNCTION = "key_image"
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "image": ("IMAGE", {"tooltip": "The image batch to perform the keying on."}),
+                "key_color": ("STRING", {"default": "0, 255, 0", "tooltip": "The RGB color to key out (e.g., '0, 255, 0' for pure green)."}),
+                "threshold": ("FLOAT", {"default": 0.4, "min": 0.0, "max": 1.732, "step": 0.01, "tooltip": "The tolerance for the key. Higher values include more color variations."}),
+                "softness": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "The falloff or feathering of the mask's edge. Creates a smoother transition."}),
+                "invert_mask": ("BOOLEAN", {"default": False, "label_on": "Yes", "label_off": "No", "tooltip": "If True, the keyed color will be white in the mask instead of black."}),
+            }
+        }
+
+    def _parse_color_tensor(self, color_string, device):
+        try:
+            # Parse R, G, B values from the string and normalize them to 0-1 range
+            color = [float(c.strip()) / 255.0 for c in color_string.split(',')]
+            if len(color) != 3:
+                raise ValueError
+            return torch.tensor(color, device=device).view(1, 1, 1, 3)
+        except Exception:
+            print(f"GreenScreenKeyer: Warning - Invalid key_color '{color_string}'. Defaulting to pure green.")
+            return torch.tensor([0.0, 1.0, 0.0], device=device).view(1, 1, 1, 3)
+
+    def key_image(self, image, key_color, threshold, softness, invert_mask):
+        # The input `image` is a batch of shape (B, H, W, C)
+        
+        # Prepare the key color tensor
+        key_color_t = self._parse_color_tensor(key_color, image.device)
+
+        # Calculate the difference between each pixel and the key color
+        # This uses broadcasting to subtract the (1,1,1,3) key_color from the (B,H,W,3) image
+        diff = image - key_color_t
+        
+        # Calculate the Euclidean distance for each pixel. The result is a (B, H, W) tensor.
+        # This measures how "far" each pixel's color is from the target key_color.
+        distances = torch.sqrt(torch.sum(diff ** 2, dim=3))
+
+        # Normalize the mask based on threshold and softness
+        # Anything with a distance below (threshold - softness) will be 0.
+        # Anything with a distance above threshold will be 1.
+        # Anything in between will be a smooth gradient.
+        softness = max(0.001, softness) # Avoid division by zero
+        
+        # Calculate the mask by scaling the distances within the softness range
+        mask = (distances - (threshold - softness)) / softness
+        
+        # Clamp the values to the 0-1 range to create a valid mask
+        mask = torch.clamp(mask, 0, 1)
+
+        # Invert the mask if requested
+        if invert_mask:
+            mask = 1.0 - mask
+        
+        print(f"GreenScreenKeyer: Successfully generated mask for a batch of {image.shape[0]} images.")
+
+        # Return the original image (as a passthrough) and the generated mask batch
+        return (image, mask)
+    
+class TransformPasterBatch:
+    """
+    A memory-efficient node to transform and paste an overlay batch onto a background batch.
+    It processes frame-by-frame with options for start offset and alignment.
+    """
+    CATEGORY = "Automation/Image"
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("composited_image",)
+    FUNCTION = "process_batch"
+
+    @classmethod
+    def INPUT_TYPES(s):
+        resampling_methods = ["LANCZOS", "BICUBIC", "BILINEAR", "NEAREST"]
+        
+        return {
+            "required": {
+                "background_image": ("IMAGE", {"tooltip": "The base video timeline to paste onto."}),
+                "overlay_image": ("IMAGE", {"tooltip": "The overlay video timeline to transform and paste."}),
+                "overlay_mask": ("MASK", {"tooltip": "The mask or mask timeline for the overlay."}),
+                
+                # --- NEW CONTROL INPUTS ---
+                "alignment_mode": (["Paste at Start", "Paste at End"], {"default": "Paste at Start", "tooltip": "Align the overlay relative to the start or the end of the background timeline."}),
+                "start_frame_offset": ("INT", {"default": 0, "min": -99999, "max": 99999, "step": 1, "tooltip": "Offset in frames from the chosen alignment point. For 'Paste at End', a positive value moves it earlier."}),
+
+                "size": ("INT", {"default": 256, "min": 1, "max": 8192, "step": 8}),
+                "rotation": ("FLOAT", {"default": 0.0, "min": -360.0, "max": 360.0, "step": 0.1, "round": 0.01}),
+                "x_offset": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1}),
+                "y_offset": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1}),
+                "interpolation": (resampling_methods, {"default": "LANCZOS"}),
+            }
+        }
+
+    def _tensor_to_pil(self, tensor_frame, is_mask=False):
+        if tensor_frame is None: return None
+        np_array = (tensor_frame.cpu().numpy() * 255).astype(np.uint8)
+        return Image.fromarray(np_array, 'L') if is_mask else Image.fromarray(np_array, 'RGB')
+
+    def _pil_to_tensor(self, pil_image):
+        return torch.from_numpy(np.array(pil_image).astype(np.float32) / 255.0)
+
+    def process_batch(self, background_image, overlay_image, overlay_mask, alignment_mode, start_frame_offset, size, rotation, x_offset, y_offset, interpolation):
+        
+        num_bg_frames = background_image.shape[0]
+        num_overlay_frames = overlay_image.shape[0]
+        num_mask_frames = overlay_mask.shape[0]
+
+        # Work in-place on the background image tensor to save memory
+        output_timeline = background_image
+        
+        # --- START OF NEW LOGIC: Calculate the paste window ---
+        paste_start_index = 0
+        if alignment_mode == "Paste at End":
+            # Calculate the start frame so the overlay's last frame aligns with the background's last frame.
+            # Then, subtract the offset (a positive offset moves it earlier in time).
+            paste_start_index = (num_bg_frames - num_overlay_frames) - start_frame_offset
+        else: # "Paste at Start"
+            paste_start_index = start_frame_offset
+            
+        paste_end_index = paste_start_index + num_overlay_frames
+        
+        print(f"TransformPasterBatch: Alignment='{alignment_mode}', Offset={start_frame_offset}.")
+        print(f"TransformPasterBatch: Calculated paste window for background: frames {paste_start_index} to {paste_end_index - 1}.")
+        # --- END OF NEW LOGIC ---
+
+        resampling_filter = getattr(Image.Resampling, interpolation, Image.Resampling.LANCZOS)
+
+        # Loop through all background frames
+        for i in range(num_bg_frames):
+            
+            # Check if the current frame is inside our calculated paste window.
+            if i >= paste_start_index and i < paste_end_index:
+                # Calculate the corresponding index for the overlay and mask.
+                overlay_idx = i - paste_start_index
+                mask_idx = overlay_idx % num_mask_frames
+                
+                # 1. Convert single frames to PIL
+                bg_pil = self._tensor_to_pil(output_timeline[i]).convert("RGBA")
+                overlay_pil = self._tensor_to_pil(overlay_image[overlay_idx])
+                mask_pil = self._tensor_to_pil(overlay_mask[mask_idx], is_mask=True)
+                
+                overlay_rgba = overlay_pil.convert("RGBA")
+                overlay_rgba.putalpha(mask_pil)
+
+                # 2. Scale
+                if overlay_rgba.width > 0 and overlay_rgba.height > 0:
+                    aspect = overlay_rgba.width / overlay_rgba.height
+                    new_w, new_h = (size, max(1, int(size / aspect))) if aspect >= 1 else (max(1, int(size * aspect)), size)
+                    overlay_rgba = overlay_rgba.resize((new_w, new_h), resample=resampling_filter)
+
+                # 3. Rotate
+                if rotation != 0:
+                    overlay_rgba = overlay_rgba.rotate(rotation, resample=Image.Resampling.BICUBIC, expand=True)
+                
+                # 4. Paste
+                paste_x = (bg_pil.width // 2) + x_offset - (overlay_rgba.width // 2)
+                paste_y = (bg_pil.height // 2) + y_offset - (overlay_rgba.height // 2)
+                bg_pil.paste(overlay_rgba, (paste_x, paste_y), mask=overlay_rgba)
+
+                # 5. Convert back to tensor and update timeline
+                output_timeline[i] = self._pil_to_tensor(bg_pil.convert("RGB"))
+            else:
+                # If we're outside the paste window, do nothing.
+                continue
+
+        print("TransformPasterBatch: Processing complete.")
+        return (output_timeline,)

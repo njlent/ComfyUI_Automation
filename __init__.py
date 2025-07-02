@@ -13,7 +13,6 @@ NODES_TO_LOAD = {
     "TextOnImage": "✍️ Text on Image",
     "PasteTextOnImageBatch": "✍️ Paste Text on Image Batch",
     "AnimateTextOnImage": "✍️ Animate Text on Image",
-    "TransformPaster": "🔧 Transform Paster",
     "GaussianBlur": "✨ Gaussian Blur",
     "S3Uploader": "☁️ S3 Uploader",
     "WebhookUploader": "🚀 Webhook Uploader",
@@ -25,8 +24,14 @@ NODES_TO_LOAD = {
     "StringToInteger": "🔢 String to Integer",
     "StringToListConverter": "🔧 String Literal to List Converter",
     "ImageMaskBatchCombiner": "🔧 Image/Mask Batch Combiner",
+    "ImageBatchConcatenator": "🔧 Image Batch Concatenator",
+    "TransformPaster": "🔧 Transform Paster",
+    "TransformPasterBatch": "🔧 Transform Paster (Batch)",
     "TimeScheduler": "🕒 Time Scheduler",
     "MemoryPurge": "🧹 Memory Purge",
+    "GetLastImageFromBatch": "🖼️ Get Last Image from Batch",
+    "AnimateGaussianBlur": "✨ Animate Gaussian Blur",
+    "GreenScreenKeyer": "🟩 Green Screen Keyer",
 }
 
 # These will be populated automatically
