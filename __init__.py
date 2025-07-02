@@ -60,7 +60,7 @@ for class_name, display_name in NODES_TO_LOAD.items():
         traceback.print_exc()
 
 print("###")
-print(f"### \033[34mComfyUI_Automation:\033[0m Successfully loaded {len(NODE_CLASS_MAPPINGS)} out of {len(NODES_TO_LOAD)} nodes.")
+print(f"###    \033[34mComfyUI_Automation:\033[0m Successfully loaded {len(NODE_CLASS_MAPPINGS)} out of {len(NODES_TO_LOAD)} nodes.")
 # Export the mappings to ComfyUI
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
 
