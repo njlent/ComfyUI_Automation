@@ -241,26 +241,29 @@ class LayeredImageProcessor:
 class TextOnImage:
     CATEGORY = "Automation/Image"; RETURN_TYPES = ("IMAGE",); FUNCTION = "draw_text"
     
+    # --- START OF EMOJI FIX: More robust regex for modern emojis ---
+    EMOJI_RANGES = (
+        r'\U0001F1E0-\U0001F1FF'  # flags (iOS)
+        r'\U0001F300-\U0001F5FF'  # miscellaneous symbols and pictographs
+        r'\U0001F600-\U0001F64F'  # emoticons
+        r'\U0001F680-\U0001F6FF'  # transport and map symbols
+        r'\U0001F700-\U0001F77F'  # alchemical symbols
+        r'\U0001F780-\U0001F7FF'  # Geometric Shapes Extended
+        r'\U0001F800-\U0001F8FF'  # Supplemental Arrows-C
+        r'\U0001F900-\U0001F9FF'  # Supplemental Symbols and Pictographs
+        r'\U0001FA00-\U0001FA6F'  # Chess Symbols
+        r'\U0001FA70-\U0001FAFF'  # Symbols and Pictographs Extended-A
+        r'\U00002702-\U000027B0'  # Dingbats
+        r'\U000024C2-\U0001F251' 
+        r'\U00002600-\U000026FF'  # Miscellaneous Symbols
+    )
+    MODIFIERS = r'\U0001F3FB-\U0001F3FF\u200d\u2640\u2642\ufe0f' # Skin tones, ZWJ, gender, variation selector
+
+    EMOJI_SPLIT_REGEX = re.compile(f'([{EMOJI_RANGES}{MODIFIERS}]+)')
+    # --- END OF EMOJI FIX ---
+
     EMOJI_FONT = None
     EMOJI_FONT_LOADED = False
-    EMOJI_SPLIT_REGEX = re.compile(
-        r'('
-        r'['
-        '\U0001F1E0-\U0001F1FF'
-        '\U0001F300-\U0001F5FF'
-        '\U0001F600-\U0001F64F'
-        '\U0001F680-\U0001F6FF'
-        '\U0001F700-\U0001F77F'
-        '\U0001F780-\U0001F7FF'
-        '\U0001F800-\U0001F8FF'
-        '\U0001F900-\U0001F9FF'
-        '\U0001FA00-\U0001FA6F'
-        '\U0001FA70-\U0001FAFF'
-        '\U00002702-\U000027B0'
-        '\U000024C2-\U0001F251'
-        ']'
-        r')'
-    )
 
     def _get_emoji_font_path(self):
         system = platform.system()
@@ -318,14 +321,11 @@ class TextOnImage:
             "font_color": ("STRING", {"default": "255, 255, 255", "tooltip": "Text color in R, G, B format."}),
             "wrap_width": ("INT", {"default": 0, "min": 0, "max": 8192, "step": 1, "tooltip": "Maximum width in pixels for text wrapping. Set to 0 to disable wrapping."}),
             "line_height_multiplier": ("FLOAT", {"default": 1.2, "min": 0.5, "max": 3.0, "step": 0.1, "round": 0.01, "tooltip": "Multiplier for line spacing."}),
-            
-            # --- NEW STYLING INPUTS ---
             "style": (["None", "Background Block", "Drop Shadow", "Stroke"], {"default": "None"}),
             "style_color": ("STRING", {"default": "0, 0, 0, 128", "tooltip": "R,G,B,A format for the chosen style."}),
             "bg_padding": ("INT", {"default": 10, "min": 0, "max": 200, "step": 1, "tooltip": "Padding for the Background Block."}),
             "shadow_offset": ("INT", {"default": 5, "min": -100, "max": 100, "step": 1, "tooltip": "Offset for the Drop Shadow."}),
             "stroke_width": ("INT", {"default": 2, "min": 0, "max": 50, "step": 1, "tooltip": "Width of the text stroke."}),
-
             "x_position": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1, "tooltip": "Horizontal nudge from the aligned position."}),
             "y_position": ("INT", {"default": 0, "min": -8192, "max": 8192, "step": 1, "tooltip": "Vertical nudge from the aligned position."}),
             "horizontal_align": (["left", "center", "right"], {"tooltip": "Horizontal alignment anchor for the text block."}),
@@ -345,7 +345,7 @@ class TextOnImage:
     def _parse_color(self, color_string, default_color):
         try:
             parts = [int(c.strip()) for c in color_string.split(',')]
-            if len(parts) == 3: parts.append(255) # Add full alpha if missing for styles
+            if len(parts) == 3: parts.append(255)
             return tuple(parts)
         except:
             return default_color
@@ -384,18 +384,14 @@ class TextOnImage:
         return "\n".join(lines)
     
     def _draw_text_chunked(self, draw, pos, text, main_font, emoji_font, fill, **kwargs):
-        """Helper to draw a line of mixed text/emoji content."""
         x, y = pos
         parts = self.EMOJI_SPLIT_REGEX.split(text)
         for part in parts:
             if not part: continue
             is_emoji = self.EMOJI_SPLIT_REGEX.match(part)
             font_to_use = emoji_font if is_emoji and emoji_font else main_font
-            
-            # Pass stroke arguments if they exist
             stroke_width = kwargs.get('stroke_width', 0)
             stroke_fill = kwargs.get('stroke_fill', None)
-            
             draw.text((x, y), part, font=font_to_use, fill=fill, embedded_color=True, stroke_width=stroke_width, stroke_fill=stroke_fill)
             part_width = self._get_text_size(draw, part, main_font, emoji_font)[2]
             x += part_width
@@ -449,7 +445,6 @@ class TextOnImage:
                 else: x_start = (img_width - total_block_width) / 2
                 x_start += x_position
 
-                # Adjust line position for alignment
                 line_x_offset = 0
                 if horizontal_align == "center":
                     line_x_offset = (total_block_width - line_width) / 2
@@ -458,23 +453,19 @@ class TextOnImage:
                 
                 line_pos = (x_start + line_x_offset, current_y)
                 
-                # Draw Styles
                 if style == "Background Block":
                     bg_x0 = line_pos[0] - bg_padding
                     bg_y0 = line_pos[1] - bg_padding
                     bg_x1 = line_pos[0] + line_width + bg_padding
                     bg_y1 = line_pos[1] + single_line_height + bg_padding
                     draw.rectangle([bg_x0, bg_y0, bg_x1, bg_y1], fill=style_color_tuple)
-
                 elif style == "Drop Shadow":
                     shadow_pos = (line_pos[0] + shadow_offset, line_pos[1] + shadow_offset)
                     self._draw_text_chunked(draw, shadow_pos, line, main_font, emoji_font, fill=style_color_tuple)
-
                 elif style == "Stroke":
                     self._draw_text_chunked(draw, line_pos, line, main_font, emoji_font, fill=main_color_tuple, stroke_width=stroke_width, stroke_fill=style_color_tuple)
 
-                # Draw Main Text
-                if style != "Stroke": # If stroking, the main fill is already done
+                if style != "Stroke":
                     self._draw_text_chunked(draw, line_pos, line, main_font, emoji_font, fill=main_color_tuple)
 
                 current_y += adjusted_line_height
@@ -933,19 +924,30 @@ class AnimateTextOnImage:
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("image",)
     FUNCTION = "animate_text"
+    
+    # --- START OF EMOJI FIX: More robust regex for modern emojis ---
+    EMOJI_RANGES = (
+        r'\U0001F1E0-\U0001F1FF'  # flags (iOS)
+        r'\U0001F300-\U0001F5FF'  # miscellaneous symbols and pictographs
+        r'\U0001F600-\U0001F64F'  # emoticons
+        r'\U0001F680-\U0001F6FF'  # transport and map symbols
+        r'\U0001F700-\U0001F77F'  # alchemical symbols
+        r'\U0001F780-\U0001F7FF'  # Geometric Shapes Extended
+        r'\U0001F800-\U0001F8FF'  # Supplemental Arrows-C
+        r'\U0001F900-\U0001F9FF'  # Supplemental Symbols and Pictographs
+        r'\U0001FA00-\U0001FA6F'  # Chess Symbols
+        r'\U0001FA70-\U0001FAFF'  # Symbols and Pictographs Extended-A
+        r'\U00002702-\U000027B0'  # Dingbats
+        r'\U000024C2-\U0001F251' 
+        r'\U00002600-\U000026FF'  # Miscellaneous Symbols
+    )
+    MODIFIERS = r'\U0001F3FB-\U0001F3FF\u200d\u2640\u2642\ufe0f' # Skin tones, ZWJ, gender, variation selector
+    
+    EMOJI_SPLIT_REGEX = re.compile(f'([{EMOJI_RANGES}{MODIFIERS}]+)')
+    # --- END OF EMOJI FIX ---
 
-    # Emoji logic from before remains the same
     EMOJI_FONT = None
     EMOJI_FONT_LOADED = False
-    EMOJI_SPLIT_REGEX = re.compile(
-        r'('
-        r'['
-        '\U0001F1E0-\U0001F1FF' '\U0001F300-\U0001F5FF' '\U0001F600-\U0001F64F'
-        '\U0001F680-\U0001F6FF' '\U0001F700-\U0001F77F' '\U0001F780-\U0001F7FF'
-        '\U0001F800-\U0001F8FF' '\U0001F900-\U0001F9FF' '\U0001FA00-\U0001FA6F'
-        '\U0001FA70-\U0001FAFF' '\U00002702-\U000027B0' '\U000024C2-\U0001F251'
-        ']' r')'
-    )
 
     def _get_emoji_font_path(self):
         system = platform.system()
@@ -977,7 +979,6 @@ class AnimateTextOnImage:
     
     @classmethod
     def INPUT_TYPES(s):
-        # This method is already correct from the previous update, no changes needed here.
         font_files = set(["arial.ttf", "verdana.ttf", "tahoma.ttf", "cour.ttf", "times.ttf", "DejaVuSans.ttf", "LiberationSans-Regular.ttf"])
         font_dirs = []
         if os.name == 'nt': font_dirs.append(os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts'))
@@ -1015,7 +1016,6 @@ class AnimateTextOnImage:
             "optional": { "text_durations": ("INT", {"forceInput": True}) }
         }
 
-    # Helper methods from before remain the same
     def find_font(self, font_name):
         font_dirs = [];
         if os.name == 'nt': font_dirs.append(os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts'))
@@ -1053,25 +1053,28 @@ class AnimateTextOnImage:
         x, y = pos
         for part in self.EMOJI_SPLIT_REGEX.split(text):
             if not part: continue
-            font_to_use = emoji_font if self.EMOJI_SPLIT_REGEX.match(part) and emoji_font else main_font
-            stroke_width, stroke_fill = kwargs.get('stroke_width', 0), kwargs.get('stroke_fill', None)
+            is_emoji = self.EMOJI_SPLIT_REGEX.match(part)
+            font_to_use = emoji_font if is_emoji and emoji_font else main_font
+            stroke_width = kwargs.get('stroke_width', 0)
+            stroke_fill = kwargs.get('stroke_fill', None)
+            # Pillow's text function handles the actual drawing
             draw.text((x, y), part, font=font_to_use, fill=fill, embedded_color=True, stroke_width=stroke_width, stroke_fill=stroke_fill)
+            # We need to manually calculate the width to advance the cursor
             part_width, _ = self._get_text_size(draw, part, main_font, emoji_font)
             x += part_width
     
     def _parse_color(self, color_string, default_color):
         try:
-            parts = [int(c.strip()) for c in color_string.split(',')]; parts.append(255) if len(parts) == 3 else None; return tuple(parts)
+            parts = [int(c.strip()) for c in color_string.split(',')];
+            if len(parts) == 3: parts.append(255)
+            return tuple(parts)
         except: return default_color
-
-
 
     def animate_text(self, background_image, text, animation_type, animation_duration, duration_unit, font_name, font_size, font_color, wrap_width, line_height_multiplier, style, style_color, bg_padding, shadow_offset, stroke_width, x_position, y_position, horizontal_align, vertical_align, margin, text_durations=None):
         
         output_tensor = background_image
         num_bg_frames = output_tensor.shape[0]
 
-        # All setup and timing calculation logic remains correct
         text_list = [text] if isinstance(text, str) else text
         durations = []
         if text_durations is not None:
@@ -1113,7 +1116,6 @@ class AnimateTextOnImage:
                 frame_to_text_info[frame_idx] = {"full_text_layout": final_text, "draw_text": text_to_draw}
             current_frame += display_duration
 
-        # Main Drawing Loop
         canvas_w, canvas_h = output_tensor.shape[2], output_tensor.shape[1]
         for i in range(num_bg_frames):
             text_info = frame_to_text_info.get(i)
@@ -1140,9 +1142,6 @@ class AnimateTextOnImage:
             
             lines_to_draw = current_text.split('\n')
 
-            # --- START OF FIX: Final Two-Pass Rendering Logic ---
-
-            # --- PASS 1: Draw background SHAPES only. ---
             if style == "Background Block":
                 current_y_bg = final_y_base
                 for line in lines_to_draw:
@@ -1152,29 +1151,21 @@ class AnimateTextOnImage:
                     draw.rectangle([line_pos[0] - bg_padding, line_pos[1] - bg_padding, line_pos[0] + line_width + bg_padding, line_pos[1] + single_line_height + bg_padding], fill=style_color_tuple)
                     current_y_bg += adjusted_line_height
 
-            # --- PASS 2: Draw all TEXT-BASED elements in the correct order. ---
             current_y_text = final_y_base
             for line in lines_to_draw:
                 line_width, _ = self._get_text_size(temp_draw, line, main_font, emoji_font)
                 line_x_offset = (full_width - line_width) / 2 if horizontal_align == "center" else (full_width - line_width) if horizontal_align == "right" else 0
                 line_pos = (final_x_base + line_x_offset, current_y_text)
 
-                # A. Draw shadow or stroke layer first.
                 if style == "Drop Shadow":
                     shadow_pos = (line_pos[0] + shadow_offset, line_pos[1] + shadow_offset)
                     self._draw_text_chunked(draw, shadow_pos, line, main_font, emoji_font, fill=style_color_tuple)
-                
                 elif style == "Stroke":
-                    # This draws the "fattened" text to create the outline effect.
                     self._draw_text_chunked(draw, line_pos, line, main_font, emoji_font, fill=style_color_tuple, stroke_width=stroke_width, stroke_fill=style_color_tuple)
                 
-                # B. ALWAYS draw the main, solid text fill ON TOP of any effect.
                 self._draw_text_chunked(draw, line_pos, line, main_font, emoji_font, fill=main_color_tuple)
-                
                 current_y_text += adjusted_line_height
 
-            # --- END OF FIX ---
-            
             composited_image = Image.alpha_composite(bg_pil, text_layer).convert("RGB")
             output_tensor[i] = torch.from_numpy(np.array(composited_image).astype(np.float32) / 255.0)
 
