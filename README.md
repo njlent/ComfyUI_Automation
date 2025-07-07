@@ -4,6 +4,44 @@ This is a collection of custom nodes for ComfyUI designed to automate and stream
 
 ---
 
+## Node Glossary
+
+*   [**RSS Feed Reader**](#-rss-feed-reader)
+*   [**Simple Web Scraper**](#️-simple-web-scraper)
+*   [**Targeted Web Scraper**](#-targeted-web-scraper)
+*   [**Load Image From URL**](#️-load-image-from-url)
+*   [**Layered Image Processor**](#️-layered-image-processor)
+*   [**Text on Image**](#️-text-on-image)
+*   [**Paste Text on Image Batch**](#️-paste-text-on-image-batch)
+*   [**Animate Text on Image**](#️-animate-text-on-image)
+*   [**Transform Paster (Static)**](#-transform-paster-static)
+*   [**Transform Paster (Batch)**](#-transform-paster-batch)
+*   [**Gaussian Blur**](#-gaussian-blur)
+*   [**Animate Gaussian Blur**](#-animate-gaussian-blur)
+*   [**Green Screen Keyer**](#-green-screen-keyer)
+*   [**Webhook Uploader**](#-webhook-uploader)
+*   [**S3 Uploader**](#-s3-uploader)
+*   [**SRT Parser**](#-srt-parser)
+*   [**SRT Scene Generator**](#️-srt-scene-generator)
+*   [**Image Batch Repeater**](#-image-batch-repeater)
+*   [**Mask Batch Repeater**](#-mask-batch-repeater)
+*   [**Audio Reactive Paster**](#-audio-reactive-paster)
+*   [**Image Selector by Index**](#️-image-selector-by-index)
+*   [**Get Last Image from Batch**](#️-get-last-image-from-batch)
+*   [**Time Scheduler**](#-time-scheduler)
+*   [**String to Integer**](#-string-to-integer)
+*   [**Batch to String**](#-batch-to-string)
+*   [**String Literal to List Converter**](#-string-literal-to-list-converter)
+*   [**Image/Mask Batch Combiner**](#-imagemask-batch-combiner)
+*   [**Image Batch Concatenator**](#-image-batch-concatenator)
+*   [**Memory Purge**](#-memory-purge)
+### Experimental nodes
+*   [**Direct TikTok Uploader**](#-direct-tiktok-uploader-experimental)
+*   [**Scheduled TikTok Uploader**](#-scheduled-tiktok-uploader-experimental)
+
+
+---
+
 ## Installation
 
 1.  Navigate to your `ComfyUI/custom_nodes/` directory.
