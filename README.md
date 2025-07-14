@@ -71,7 +71,7 @@ This is a collection of custom nodes for ComfyUI designed to automate and stream
 #### 📰 RSS Feed Reader
 *Category: `Automation/RSS`*
 
-![RSS Feed Reader](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/RSS_Feed_Reader.jpg)
+![RSS Feed Reader](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/RSS_Feed_Reader.jpg)
 
 Fetches and parses entries from one or more RSS feeds.
 
@@ -93,7 +93,7 @@ Fetches and parses entries from one or more RSS feeds.
 #### 🕸️ Simple Web Scraper
 *Category: `Automation/Web`*
 
-![Simple Web Scraper](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Simple_Web_Scraper.jpg)
+![Simple Web Scraper](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Simple_Web_Scraper.jpg)
 
 A basic scraper that grabs all text and all image links from one or more URLs.
 
@@ -106,7 +106,7 @@ A basic scraper that grabs all text and all image links from one or more URLs.
 #### 🎯 Targeted Web Scraper
 *Category: `Automation/Web`*
 
-![Targeted Web Scraper](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Targeted_Web_Scraper.jpg)
+![Targeted Web Scraper](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Targeted_Web_Scraper.jpg)
 
 A powerful scraper that gives you fine-grained control to extract content from specific parts of a web page using CSS selectors, while simultaneously removing unwanted content.
 
@@ -123,7 +123,7 @@ A powerful scraper that gives you fine-grained control to extract content from s
 #### 🖼️ Load Image From URL
 *Category: `Automation/Image`*
 
-![Load Image From URL](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Load_Image_From_URL.jpg)
+![Load Image From URL](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Load_Image_From_URL.jpg)
 
 Downloads one or more images from URLs and prepares them as a standard ComfyUI `IMAGE` batch.
 
@@ -139,7 +139,7 @@ Downloads one or more images from URLs and prepares them as a standard ComfyUI `
 #### 🖼️ Layered Image Processor
 *Category: `Automation/Image`*
 
-![Layered Image Processor](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Layered_Image_Processor.jpg)
+![Layered Image Processor](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Layered_Image_Processor.jpg)
 
 Creates a layered image effect by placing a scaled version of an image on top of a blurred, full-screen version of the same image.
 
@@ -157,7 +157,7 @@ Creates a layered image effect by placing a scaled version of an image on top of
 #### ✍️ Text on Image
 *Category: `Automation/Image`*
 
-![Text on Image](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Text_on_Image.jpg)
+![Text on Image](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Text_on_Image.jpg)
 
 A highly advanced node for drawing stylized static text onto an image. It is fully batch-aware and packed with professional features, including emoji support.
 
@@ -185,7 +185,7 @@ A highly advanced node for drawing stylized static text onto an image. It is ful
 #### ✍️ Paste Text on Image Batch
 *Category: `Automation/Image`*
 
-![Paste Text on Image Batch](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Paste_Text_on_Image_Batch.jpg)
+![Paste Text on Image Batch](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Paste_Text_on_Image_Batch.jpg)
 
 A powerful compositing node that pastes formatted text onto a background image batch or video timeline. This node is timeline-aware.
 
@@ -208,7 +208,7 @@ A powerful compositing node that pastes formatted text onto a background image b
 #### ✍️ Animate Text on Image
 *Category: `Automation/Image`*
 
-![Animate Text on Image](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Animate_Text_on_Image.jpg)
+![Animate Text on Image](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Animate_Text_on_Image.jpg)
 
 A comprehensive motion graphics node for creating animated text on a video timeline. It handles batches of text with synchronized timing and features advanced styling.
 
@@ -226,7 +226,7 @@ A comprehensive motion graphics node for creating animated text on a video timel
 #### 🔧 Transform Paster (Static)
 *Category: `Automation/Image`*
 
-![Transform Paster (Static)](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Transform_Paster.jpg)
+![Transform Paster (Static)](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Transform_Paster.jpg)
 
 A core compositing tool for **single images**. It takes a background image, an overlay image, and a mask, and provides precise controls for transforming the overlay before pasting.
 
@@ -245,7 +245,7 @@ A core compositing tool for **single images**. It takes a background image, an o
 #### 🔧 Transform Paster (Batch)
 *Category: `Automation/Image`*
 
-![Transform Paster (Batch)](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Transform_Paster_Batch.jpg)
+![Transform Paster (Batch)](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Transform_Paster_Batch.jpg)
 
 A powerful and memory-efficient node for compositing video timelines. It transforms and pastes an overlay batch onto a background batch with precise timing controls.
 
@@ -266,7 +266,7 @@ A powerful and memory-efficient node for compositing video timelines. It transfo
 #### ✨ Gaussian Blur
 *Category: `Automation/Image`*
 
-![Gaussian Blur](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Gaussian_Blur.jpg)
+![Gaussian Blur](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Gaussian_Blur.jpg)
 
 A simple and efficient node to apply a Gaussian blur effect to an image or a batch of images.
 
@@ -279,7 +279,7 @@ A simple and efficient node to apply a Gaussian blur effect to an image or a bat
 #### ✨ Animate Gaussian Blur
 *Category: `Automation/Image`*
 
-![Animate Gaussian Blur](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Animate_Gaussian_Blur.jpg)
+![Animate Gaussian Blur](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Animate_Gaussian_Blur.jpg)
 
 Applies a Gaussian blur to a video timeline, with the blur strength animating smoothly from `0` to a `max_radius` over the duration of the clip.
 
@@ -292,7 +292,7 @@ Applies a Gaussian blur to a video timeline, with the blur strength animating sm
 #### 🟩 Green Screen Keyer
 *Category: `Automation/Image`*
 
-![Green Screen Keyer](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Green_Screen_Keyer.jpg)
+![Green Screen Keyer](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Green_Screen_Keyer.jpg)
 
 A node for performing chroma keying on an image or video timeline.
 
@@ -309,7 +309,7 @@ A node for performing chroma keying on an image or video timeline.
 #### 🖼️ Image Selector by Index
 *Category: `Automation/Image`*
 
-![Image Selector by Index](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Image_Selector_by_Index.jpg)
+![Image Selector by Index](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Image_Selector_by_Index.jpg)
 
 Selects and loads a batch of images from a directory based on a corresponding batch of indices (numbers).
 
@@ -325,7 +325,7 @@ Selects and loads a batch of images from a directory based on a corresponding ba
 #### 🖼️ Get Last Image from Batch
 *Category: `Automation/Image`*
 
-![Get Last Image from Batch](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Get_Last_Image_from_Batch.jpg)
+![Get Last Image from Batch](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Get_Last_Image_from_Batch.jpg)
 
 A simple utility node that takes an image batch (e.g., a video timeline) and outputs only the very last frame as a new, single-image batch.
 
@@ -339,7 +339,7 @@ A simple utility node that takes an image batch (e.g., a video timeline) and out
 #### 🚀 Webhook Uploader
 *Category: `Automation/Publishing`*
 
-![Webhook Uploader](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Webhook_Uploader.jpg)
+![Webhook Uploader](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Webhook_Uploader.jpg)
 
 Sends your final video URL, thumbnail URL, and description to a third-party automation service like **Make.com** or **Zapier** via a webhook.
 
@@ -356,7 +356,7 @@ Sends your final video URL, thumbnail URL, and description to a third-party auto
 #### ☁️ S3 Uploader
 *Category: `Automation/Publishing`*
 
-![S3 Uploader](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/S3_Uploader.jpg)
+![S3 Uploader](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/S3_Uploader.jpg)
 
 Uploads a local file to an Amazon S3 bucket and makes it publicly accessible.
 
@@ -375,7 +375,7 @@ Uploads a local file to an Amazon S3 bucket and makes it publicly accessible.
 #### 🎬 SRT Parser
 *Category: `Automation/Video`*
 
-![SRT Parser](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/SRT_Parser.jpg)
+![SRT Parser](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/SRT_Parser.jpg)
 
 Parses SRT (subtitle) formatted text to extract timing and content.
 
@@ -393,7 +393,7 @@ Parses SRT (subtitle) formatted text to extract timing and content.
 #### 🎞️ SRT Scene Generator
 *Category: `Automation/Video`*
 
-![SRT Scene Generator](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/SRT_Scene_Generator.jpg)
+![SRT Scene Generator](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/SRT_Scene_Generator.jpg)
 
 Generates a timeline of blank frames based on a flat list of durations from the `SRT Parser`.
 
@@ -410,7 +410,7 @@ Generates a timeline of blank frames based on a flat list of durations from the 
 #### 🔂 Image Batch Repeater
 *Category: `Automation/Video`*
 
-![Image Batch Repeater](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Image_Batch_Repeater.jpg)
+![Image Batch Repeater](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Image_Batch_Repeater.jpg)
 
 The core assembly node for images. It takes a batch of content images and repeats each one according to a list of frame counts. Highly memory-optimized.
 
@@ -423,7 +423,7 @@ The core assembly node for images. It takes a batch of content images and repeat
 #### 🔂 Mask Batch Repeater
 *Category: `Automation/Video`*
 
-![Mask Batch Repeater](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Mask_Batch_Repeater.jpg)
+![Mask Batch Repeater](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Mask_Batch_Repeater.jpg)
 
 The dedicated assembly node for masks. It takes a batch of masks and repeats them according to a list of frame counts.
 
@@ -436,7 +436,7 @@ The dedicated assembly node for masks. It takes a batch of masks and repeats the
 #### 🔊 Audio Reactive Paster
 *Category: `Automation/Video`*
 
-![Audio Reactive Paster](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Audio_Reactive_Paster.jpg)
+![Audio Reactive Paster](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Audio_Reactive_Paster.jpg)
 
 Pastes an overlay image/timeline onto a background video, with its position animated by the amplitude of an audio signal.
 
@@ -460,7 +460,7 @@ Pastes an overlay image/timeline onto a background video, with its position anim
 #### 🕒 Time Scheduler
 *Category: `Automation/Time`*
 
-![Time Scheduler](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Time_Scheduler.jpg)
+![Time Scheduler](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Time_Scheduler.jpg)
 
 A utility node for calculating future dates and times, perfect for scheduling posts.
 
@@ -480,7 +480,7 @@ A utility node for calculating future dates and times, perfect for scheduling po
 #### 🔢 String to Integer
 *Category: `Automation/Utils`*
 
-![String to Integer](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/String_to_Integer.jpg)
+![String to Integer](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/String_to_Integer.jpg)
 
 Converts a string or a batch of strings into integers. Robust against messy LLM outputs, as it finds the first available number in the text.
 
@@ -492,7 +492,7 @@ Converts a string or a batch of strings into integers. Robust against messy LLM 
 #### 📜 Batch to String
 *Category: `Automation/Utils`*
 
-![Batch to String](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Batch_to_String.jpg)
+![Batch to String](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Batch_to_String.jpg)
 
 A utility node to convert a list/batch of strings into a single string with a custom separator.
 
@@ -505,7 +505,7 @@ A utility node to convert a list/batch of strings into a single string with a cu
 #### 📜 String Literal to List Converter
 *Category: `Automation/Converters`*
 
-![String Literal to List Converter](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/String_Literal_to_List_Converter.jpg)
+![String Literal to List Converter](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/String_Literal_to_List_Converter.jpg)
 
 This node takes a string that is a Python list literal (e.g., `"['a', 'b', 'c']"`) and converts it into a proper ComfyUI batch/list output.
 
@@ -517,7 +517,7 @@ This node takes a string that is a Python list literal (e.g., `"['a', 'b', 'c']"
 #### 🔧 Image/Mask Batch Combiner
 *Category: `Automation/Utils`*
 
-![Image/Mask Batch Combiner](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Image_Mask_Batch_Combiner.jpg)
+![Image/Mask Batch Combiner](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Image_Mask_Batch_Combiner.jpg)
 
 A crucial utility node that merges a sequence of individual images/masks (from an iterated node) into a single, unified batch. Place this **after** an iterated node to "break" the iteration.
 
@@ -531,7 +531,7 @@ A crucial utility node that merges a sequence of individual images/masks (from a
 #### 🔧 Image Batch Concatenator
 *Category: `Automation/Utils`*
 
-![Image Batch Concatenator](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Image_Batch_Concatenator.jpg)
+![Image Batch Concatenator](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Image_Batch_Concatenator.jpg)
 
 A memory-efficient node for combining multiple image batches (video clips) into a single, continuous timeline.
 
@@ -547,7 +547,7 @@ A memory-efficient node for combining multiple image batches (video clips) into 
 #### 🧹 Memory Purge
 *Category: `Automation/Utils`*
 
-![Memory Purge](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Memory_Purge.jpg)
+![Memory Purge](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Memory_Purge.jpg)
 
 A vital utility for managing system resources in very large workflows. It forces garbage collection and empties the CUDA cache, freeing up RAM and VRAM.
 
@@ -567,7 +567,7 @@ A vital utility for managing system resources in very large workflows. It forces
 #### 🔥 Direct TikTok Uploader (Experimental)
 *Category: `Automation/Publishing (Direct)`*
 
-![Direct TikTok Uploader](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Direct_TikTok_Uploader.jpg)
+![Direct TikTok Uploader](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Direct_TikTok_Uploader.jpg)
 
 Uploads a video directly to TikTok. This node automates a browser to log in (using your cookie) and perform the upload.
 
@@ -586,7 +586,7 @@ Uploads a video directly to TikTok. This node automates a browser to log in (usi
 #### 📅 Scheduled TikTok Uploader (Experimental)
 *Category: `Automation/Publishing (Direct)`*
 
-![Scheduled TikTok Uploader](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/main/readme/Scheduled_TikTok_Uploader.jpg)
+![Scheduled TikTok Uploader](https://raw.githubusercontent.com/njlent/ComfyUI_Automation/tree/main/readme/Scheduled_TikTok_Uploader.jpg)
 
 Schedules a video to be posted on TikTok at a future date and time. It uses the same browser automation method as the direct uploader.
 
