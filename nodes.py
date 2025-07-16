@@ -34,7 +34,7 @@ except ImportError:
 
 # --- RSS FEEDER NODE ---
 class RssFeedReader:
-    CATEGORY = "Automation/RSS"
+    CATEGORY = "⚫mimikry/Automation/RSS"
     RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING")
     RETURN_NAMES = ("raw_output_batch", "formatted_text_batch", "content_batch_1", "content_batch_2")
     FUNCTION = "read_feed"
@@ -68,7 +68,7 @@ class RssFeedReader:
 
 # --- WEB SCRAPER NODES ---
 class SimpleWebScraper:
-    CATEGORY = "Automation/Web"; RETURN_TYPES, RETURN_NAMES = ("STRING", "STRING"), ("extracted_texts_batch", "image_urls_batch"); FUNCTION = "scrape_simple"
+    CATEGORY = "⚫mimikry/Automation/Web"; RETURN_TYPES, RETURN_NAMES = ("STRING", "STRING"), ("extracted_texts_batch", "image_urls_batch"); FUNCTION = "scrape_simple"
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {"url": ("STRING", {"multiline": False, "default": "", "tooltip": "A single URL or a batch of URLs to scrape."})}}
@@ -90,7 +90,7 @@ class SimpleWebScraper:
         return (at, au)
 
 class TargetedWebScraper:
-    CATEGORY = "Automation/Web"; RETURN_TYPES, RETURN_NAMES = ("STRING", "STRING"), ("extracted_text_batch", "image_urls_batch"); FUNCTION = "scrape_targeted"
+    CATEGORY = "⚫mimikry/Automation/Web"; RETURN_TYPES, RETURN_NAMES = ("STRING", "STRING"), ("extracted_text_batch", "image_urls_batch"); FUNCTION = "scrape_targeted"
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
@@ -132,7 +132,7 @@ class TargetedWebScraper:
 
 # --- IMAGE LOADER NODES ---
 class LoadImageFromURL:
-    CATEGORY = "Automation/Image"; RETURN_TYPES, RETURN_NAMES = ("IMAGE", "MASK"), ("image", "mask"); FUNCTION = "load_image_from_url"
+    CATEGORY = "⚫mimikry/Automation/Image"; RETURN_TYPES, RETURN_NAMES = ("IMAGE", "MASK"), ("image", "mask"); FUNCTION = "load_image_from_url"
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
@@ -166,7 +166,7 @@ class LoadImageFromURL:
         return (torch.cat(it, dim=0), torch.cat(mt, dim=0))
 
 class LayeredImageProcessor:
-    CATEGORY = "Automation/Image"; RETURN_TYPES = ("IMAGE",); RETURN_NAMES = ("image",); FUNCTION = "process_image"
+    CATEGORY = "⚫mimikry/Automation/Image"; RETURN_TYPES = ("IMAGE",); RETURN_NAMES = ("image",); FUNCTION = "process_image"
     RESAMPLING_METHODS = {"LANCZOS": Image.Resampling.LANCZOS, "BICUBIC": Image.Resampling.BICUBIC, "BILINEAR": Image.Resampling.BILINEAR, "NEAREST": Image.Resampling.NEAREST}
     
     @classmethod
@@ -239,7 +239,7 @@ class LayeredImageProcessor:
 
 
 class TextOnImage:
-    CATEGORY = "Automation/Image"; RETURN_TYPES = ("IMAGE",); FUNCTION = "draw_text"
+    CATEGORY = "⚫mimikry/Automation/Image"; RETURN_TYPES = ("IMAGE",); FUNCTION = "draw_text"
     
     # --- START OF EMOJI FIX: More robust regex for modern emojis ---
     EMOJI_RANGES = (
@@ -476,7 +476,7 @@ class TextOnImage:
         return (torch.stack(output_images),)
 
 class PasteTextOnImageBatch:
-    CATEGORY = "Automation/Image"
+    CATEGORY = "⚫mimikry/Automation/Image"
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("image",)
     FUNCTION = "paste_text"
@@ -618,7 +618,7 @@ class PasteTextOnImageBatch:
 
 # --- SRT VIDEO NODES ---
 class SRTParser:
-    CATEGORY = "Automation/Video"
+    CATEGORY = "⚫mimikry/Automation/Video"
     FUNCTION = "parse_srt"
     
     ### --- PROACTIVE BUG FIX --- ###
@@ -671,7 +671,7 @@ class SRTParser:
         return (tb, sb, eb, db, len(tb), tb)
 
 class SRTSceneGenerator:
-    CATEGORY = "Automation/Video"; RETURN_TYPES, RETURN_NAMES = ("IMAGE", "INT", "INT"), ("image_timeline", "start_frame_indices", "frame_counts"); FUNCTION = "generate_scenes"
+    CATEGORY = "⚫mimikry/Automation/Video"; RETURN_TYPES, RETURN_NAMES = ("IMAGE", "INT", "INT"), ("image_timeline", "start_frame_indices", "frame_counts"); FUNCTION = "generate_scenes"
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
@@ -692,7 +692,7 @@ class SRTSceneGenerator:
         return (torch.cat(ibl, dim=0), sfi, fc)
 
 class ImageBatchRepeater:
-    CATEGORY = "Automation/Video"; RETURN_TYPES = ("IMAGE",); RETURN_NAMES = ("image_timeline",); FUNCTION = "repeat_batch"
+    CATEGORY = "⚫mimikry/Automation/Video"; RETURN_TYPES = ("IMAGE",); RETURN_NAMES = ("image_timeline",); FUNCTION = "repeat_batch"
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
@@ -746,7 +746,7 @@ class ImageBatchRepeater:
 
 
 class MaskBatchRepeater:
-    CATEGORY = "Automation/Video"; RETURN_TYPES = ("MASK",); RETURN_NAMES = ("mask_timeline",); FUNCTION = "repeat_batch"
+    CATEGORY = "⚫mimikry/Automation/Video"; RETURN_TYPES = ("MASK",); RETURN_NAMES = ("mask_timeline",); FUNCTION = "repeat_batch"
     @classmethod
     def INPUT_TYPES(s):
         return {"required": { "mask": ("MASK", {}), "repeat_counts": ("INT", {"forceInput": True}), }}
@@ -796,7 +796,7 @@ class AudioReactivePaster:
     position animated by the amplitude of a single audio signal. This version is
     memory-efficient and uses the correct paste logic with masks.
     """
-    CATEGORY = "Automation/Video"
+    CATEGORY = "⚫mimikry/Automation/Video"
     RETURN_TYPES = ("IMAGE", "IMAGE")
     RETURN_NAMES = ("image_timeline", "amplitude_visualization")
     FUNCTION = "process"
@@ -920,7 +920,7 @@ class AudioReactivePaster:
 # ... (previous code, including TextOnImage) ...
 
 class AnimateTextOnImage:
-    CATEGORY = "Automation/Image"
+    CATEGORY = "⚫mimikry/Automation/Image"
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("image",)
     FUNCTION = "animate_text"
@@ -1173,7 +1173,7 @@ class AnimateTextOnImage:
     
 # --- UTILITY NODES ---
 class StringBatchToString:
-    CATEGORY = "Automation/Utils"; RETURN_TYPES, RETURN_NAMES = ("STRING",), ("string",); FUNCTION = "convert"
+    CATEGORY = "⚫mimikry/Automation/Utils"; RETURN_TYPES, RETURN_NAMES = ("STRING",), ("string",); FUNCTION = "convert"
     @classmethod
     def INPUT_TYPES(s): return {"required": { "string_batch": ("STRING", {"forceInput": True}), "separator": ("STRING", {"multiline": False, "default": "\\n\\n"}) }}
     def convert(self, string_batch, separator):
@@ -1181,7 +1181,7 @@ class StringBatchToString:
         return (s.join(str(i) for i in string_batch) if isinstance(string_batch, list) else (string_batch if isinstance(string_batch, str) else ""),)
     
 class ImageSelectorByIndex:
-    CATEGORY = "Automation/Image"; RETURN_TYPES = ("IMAGE", "MASK"); RETURN_NAMES = ("image_batch", "mask_batch"); FUNCTION = "select_images"
+    CATEGORY = "⚫mimikry/Automation/Image"; RETURN_TYPES = ("IMAGE", "MASK"); RETURN_NAMES = ("image_batch", "mask_batch"); FUNCTION = "select_images"
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -1216,7 +1216,7 @@ class ImageSelectorByIndex:
         return (torch.cat(res_imgs, dim=0), torch.stack(res_masks, dim=0))
     
 class StringToInteger:
-    CATEGORY = "Automation/Utils"; RETURN_TYPES = ("INT",); RETURN_NAMES = ("int_output",); FUNCTION = "convert"
+    CATEGORY = "⚫mimikry/Automation/Utils"; RETURN_TYPES = ("INT",); RETURN_NAMES = ("int_output",); FUNCTION = "convert"
     @classmethod
     def INPUT_TYPES(s): return {"required": { "text": ("STRING", {"forceInput": True}), }}
     def convert(self, text):
@@ -1227,7 +1227,7 @@ class StringToInteger:
         return (0,)
         
 class StringToListConverter:
-    CATEGORY = "Automation/Converters"; RETURN_TYPES, RETURN_NAMES = ("STRING",), ("STRING_LIST",); FUNCTION = "convert"; OUTPUT_IS_LIST = (True,)
+    CATEGORY = "⚫mimikry/Automation/Converters"; RETURN_TYPES, RETURN_NAMES = ("STRING",), ("STRING_LIST",); FUNCTION = "convert"; OUTPUT_IS_LIST = (True,)
     @classmethod
     def INPUT_TYPES(s): return {"required": { "string_literal": ("STRING", {"multiline": True, "forceInput": True}), }}
     def convert(self, string_literal):
@@ -1249,7 +1249,7 @@ class ImageMaskBatchCombiner:
     # entire list of inputs to the function at once, instead of iterating.
     INPUT_IS_LIST = True
     
-    CATEGORY = "Automation/Utils"
+    CATEGORY = "⚫mimikry/Automation/Utils"
     RETURN_TYPES = ("IMAGE", "MASK")
     RETURN_NAMES = ("combined_image_batch", "combined_mask_batch")
     FUNCTION = "combine"
@@ -1289,7 +1289,7 @@ class ImageMaskBatchCombiner:
             return (image_batch[0], mask_batch[0])
         
 class TransformPaster:
-    CATEGORY = "Automation/Image"
+    CATEGORY = "⚫mimikry/Automation/Image"
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("composited_image",)
     FUNCTION = "process"
@@ -1369,7 +1369,7 @@ class TransformPaster:
         return (output_tensor,)
     
 class GaussianBlur:
-    CATEGORY = "Automation/Image"
+    CATEGORY = "⚫mimikry/Automation/Image"
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("image",)
     FUNCTION = "apply_blur"
@@ -1417,7 +1417,7 @@ class GaussianBlur:
         return (output_image,)
     
 class WebhookUploader:
-    CATEGORY = "Automation/Publishing"
+    CATEGORY = "⚫mimikry/Automation/Publishing"
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("response_text",)
     FUNCTION = "send_webhook"
@@ -1468,7 +1468,7 @@ class WebhookUploader:
             return (error_message,)
 
 class S3Uploader:
-    CATEGORY = "Automation/Publishing"
+    CATEGORY = "⚫mimikry/Automation/Publishing"
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("public_url",)
     FUNCTION = "upload_to_s3"
@@ -1533,7 +1533,7 @@ class S3Uploader:
             return (error_message,)
         
 class TimeScheduler:
-    CATEGORY = "Automation/Time"
+    CATEGORY = "⚫mimikry/Automation/Time"
     RETURN_TYPES = ("STRING", "STRING")
     RETURN_NAMES = ("formatted_date", "formatted_time")
     FUNCTION = "calculate_time"
@@ -1625,7 +1625,7 @@ class MemoryPurge:
     This version is an IMAGE passthrough, designed to be placed on a connection
     that carries an IMAGE batch.
     """
-    CATEGORY = "Automation/Utils"
+    CATEGORY = "⚫mimikry/Automation/Utils"
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("image_passthrough",)
     FUNCTION = "purge"
@@ -1683,7 +1683,7 @@ class GetLastImageFromBatch:
     """
     Selects and outputs the very last image from an input image batch.
     """
-    CATEGORY = "Automation/Image"
+    CATEGORY = "⚫mimikry/Automation/Image"
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("last_image",)
     FUNCTION = "get_last"
@@ -1720,7 +1720,7 @@ class AnimateGaussianBlur:
     Applies a Gaussian blur to a batch of images with a radius that animates linearly
     from 0 on the first frame to a specified max_radius on the last frame.
     """
-    CATEGORY = "Automation/Image"
+    CATEGORY = "⚫mimikry/Automation/Image"
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("image",)
     FUNCTION = "animate_blur"
@@ -1795,7 +1795,7 @@ class ImageBatchConcatenator:
     A memory-efficient node to concatenate multiple image batches into a single batch.
     It has one required input and multiple optional inputs for clarity.
     """
-    CATEGORY = "Automation/Utils"
+    CATEGORY = "⚫mimikry/Automation/Utils"
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("combined_image_batch",)
     FUNCTION = "concatenate"
@@ -1867,7 +1867,7 @@ class GreenScreenKeyer:
     Generates a mask from a specified key color (e.g., green screen) in a batch of images.
     Provides controls for threshold and softness for fine-tuning the key.
     """
-    CATEGORY = "Automation/Image"
+    CATEGORY = "⚫mimikry/Automation/Image"
     RETURN_TYPES = ("IMAGE", "MASK")
     RETURN_NAMES = ("image_out", "mask")
     FUNCTION = "key_image"
@@ -1935,7 +1935,7 @@ class TransformPasterBatch:
     A memory-efficient node to transform and paste an overlay batch onto a background batch.
     It processes frame-by-frame with options for start offset and alignment.
     """
-    CATEGORY = "Automation/Image"
+    CATEGORY = "⚫mimikry/Automation/Image"
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("composited_image",)
     FUNCTION = "process_batch"

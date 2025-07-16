@@ -45,7 +45,7 @@ def handle_tiktok_cookie_banner(driver, timeout=10):
         return False
 
 class DirectTikTokUploader:
-    CATEGORY = "Automation/Publishing (Direct)"
+    CATEGORY = "⚫mimikry/Automation/Publishing (Direct)"
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("upload_status",)
     FUNCTION = "upload"
@@ -147,7 +147,7 @@ class DirectTikTokUploader:
                 driver.quit()
 
 class ScheduledTikTokUploader:
-    CATEGORY = "Automation/Publishing (Direct)"
+    CATEGORY = "⚫mimikry/Automation/Publishing (Direct)"
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("upload_status",)
     FUNCTION = "upload"
