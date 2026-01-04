@@ -7,6 +7,7 @@ pandas
 scipy
 boto3
 psutil
+tqdm
 
 #EXPERIMENTAL
 

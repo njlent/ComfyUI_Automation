@@ -32,6 +32,13 @@ except ImportError:
     PSUTIL_AVAILABLE = False
     print("MemoryPurge Node: `psutil` library not found. RAM usage will not be reported. To enable, run: pip install psutil")
 
+try:
+    from tqdm import tqdm
+    TQDM_AVAILABLE = True
+except ImportError:
+    TQDM_AVAILABLE = False
+    print("ComfyUI_Automation: `tqdm` library not found. Progress bars will use console output. To enable, run: pip install tqdm")
+
 # --- RSS FEEDER NODE ---
 class RssFeedReader:
     CATEGORY = "⚫mimikry/Automation/RSS"
@@ -2097,16 +2104,33 @@ class SceneCutDetector:
             print("SceneCutDetector: Only 1 frame, returning as single scene.")
             return ([image_batch], 1, [])
 
-        print(f"SceneCutDetector: Analyzing {num_frames} frames with threshold {threshold}...")
+        print(f"SceneCutDetector: Analyzing {num_frames} frames with threshold {threshold} using '{comparison_method}' method...")
 
         # Calculate differences between consecutive frames
         differences = []
-        for i in range(num_frames - 1):
+        total_comparisons = num_frames - 1
+
+        # Use tqdm if available, otherwise use console progress
+        if TQDM_AVAILABLE:
+            frame_iterator = tqdm(range(total_comparisons), desc="SceneCutDetector: Analyzing frames", unit="frame")
+        else:
+            frame_iterator = range(total_comparisons)
+            # Print initial progress message
+            print(f"SceneCutDetector: Processing {total_comparisons} frame comparisons...")
+
+        for i in frame_iterator:
             if comparison_method == "histogram":
                 diff = self._calculate_frame_difference_histogram(image_batch[i], image_batch[i + 1])
             else:  # mean_diff
                 diff = self._calculate_frame_difference_mean(image_batch[i], image_batch[i + 1])
             differences.append(diff)
+
+            # Console progress fallback (every 10% or every 100 frames for large batches)
+            if not TQDM_AVAILABLE:
+                progress_interval = max(1, total_comparisons // 10)
+                if (i + 1) % progress_interval == 0 or i == total_comparisons - 1:
+                    percent = ((i + 1) / total_comparisons) * 100
+                    print(f"  Progress: {i + 1}/{total_comparisons} frames ({percent:.1f}%)")
 
         # Find cut points where difference exceeds threshold
         raw_cut_indices = []
