@@ -32,6 +32,7 @@ NODES_TO_LOAD = {
     "GetLastImageFromBatch": "🖼️ Get Last Image from Batch",
     "AnimateGaussianBlur": "✨ Animate Gaussian Blur",
     "GreenScreenKeyer": "🟩 Green Screen Keyer",
+    "SceneCutDetector": "✂️ Scene Cut Detector",
 }
 
 # These will be populated automatically

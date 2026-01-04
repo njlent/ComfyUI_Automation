@@ -2036,3 +2036,115 @@ class TransformPasterBatch:
 
         print("TransformPasterBatch: Processing complete.")
         return (output_timeline,)
+
+
+class SceneCutDetector:
+    """
+    Detects scene cuts in an image batch (video frames) and splits the batch
+    into separate scenes. Uses pixel difference analysis to detect abrupt changes.
+    """
+    CATEGORY = "⚫mimikry/Automation/Video"
+    RETURN_TYPES = ("IMAGE", "INT", "INT")
+    RETURN_NAMES = ("scene_batches", "scene_count", "cut_indices")
+    # The first output is a list of image batches (one per scene)
+    OUTPUT_IS_LIST = (True, False, False)
+    FUNCTION = "detect_cuts"
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "image_batch": ("IMAGE", {"tooltip": "The image batch (video frames) to analyze for scene cuts."}),
+                "threshold": ("FLOAT", {"default": 0.15, "min": 0.01, "max": 1.0, "step": 0.01,
+                    "tooltip": "Sensitivity threshold for cut detection. Lower values detect more cuts. 0.15 is a good starting point."}),
+                "min_scene_length": ("INT", {"default": 1, "min": 1, "max": 1000, "step": 1,
+                    "tooltip": "Minimum number of frames a scene must have. Helps filter out false positives from flashes."}),
+            },
+            "optional": {
+                "comparison_method": (["mean_diff", "histogram"], {"default": "mean_diff",
+                    "tooltip": "Method for comparing frames. 'mean_diff' compares pixel values directly, 'histogram' compares color distributions."}),
+            }
+        }
+
+    def _calculate_frame_difference_mean(self, frame1, frame2):
+        """Calculate the mean absolute difference between two frames."""
+        diff = torch.abs(frame1 - frame2)
+        return diff.mean().item()
+
+    def _calculate_frame_difference_histogram(self, frame1, frame2):
+        """Calculate difference using histogram comparison."""
+        # Convert to numpy for histogram calculation
+        f1_np = (frame1.cpu().numpy() * 255).astype(np.uint8)
+        f2_np = (frame2.cpu().numpy() * 255).astype(np.uint8)
+
+        # Calculate histograms for each channel and compare
+        total_diff = 0
+        for c in range(3):  # RGB channels
+            hist1 = np.histogram(f1_np[:, :, c], bins=64, range=(0, 256))[0]
+            hist2 = np.histogram(f2_np[:, :, c], bins=64, range=(0, 256))[0]
+            # Normalize histograms
+            hist1 = hist1.astype(np.float32) / (hist1.sum() + 1e-7)
+            hist2 = hist2.astype(np.float32) / (hist2.sum() + 1e-7)
+            # Calculate difference (using correlation distance)
+            total_diff += np.sum(np.abs(hist1 - hist2))
+
+        return total_diff / 3.0  # Average across channels
+
+    def detect_cuts(self, image_batch, threshold, min_scene_length, comparison_method="mean_diff"):
+        num_frames = image_batch.shape[0]
+
+        if num_frames <= 1:
+            print("SceneCutDetector: Only 1 frame, returning as single scene.")
+            return ([image_batch], 1, [])
+
+        print(f"SceneCutDetector: Analyzing {num_frames} frames with threshold {threshold}...")
+
+        # Calculate differences between consecutive frames
+        differences = []
+        for i in range(num_frames - 1):
+            if comparison_method == "histogram":
+                diff = self._calculate_frame_difference_histogram(image_batch[i], image_batch[i + 1])
+            else:  # mean_diff
+                diff = self._calculate_frame_difference_mean(image_batch[i], image_batch[i + 1])
+            differences.append(diff)
+
+        # Find cut points where difference exceeds threshold
+        raw_cut_indices = []
+        for i, diff in enumerate(differences):
+            if diff > threshold:
+                raw_cut_indices.append(i + 1)  # Cut happens AFTER frame i, so scene starts at i+1
+
+        # Apply minimum scene length filter
+        cut_indices = []
+        last_cut = 0
+        for cut_idx in raw_cut_indices:
+            if cut_idx - last_cut >= min_scene_length:
+                cut_indices.append(cut_idx)
+                last_cut = cut_idx
+
+        # Also ensure the final scene is long enough
+        if cut_indices and (num_frames - cut_indices[-1]) < min_scene_length:
+            cut_indices.pop()
+
+        print(f"SceneCutDetector: Found {len(cut_indices)} scene cuts at frames: {cut_indices}")
+
+        # Split the batch into scenes
+        scene_batches = []
+        scene_starts = [0] + cut_indices
+        scene_ends = cut_indices + [num_frames]
+
+        for start, end in zip(scene_starts, scene_ends):
+            if start < end:  # Ensure valid range
+                scene = image_batch[start:end]
+                scene_batches.append(scene)
+                print(f"  - Scene {len(scene_batches)}: frames {start}-{end-1} ({end - start} frames)")
+
+        scene_count = len(scene_batches)
+
+        if scene_count == 0:
+            print("SceneCutDetector: No scenes detected, returning original batch.")
+            return ([image_batch], 1, [])
+
+        print(f"SceneCutDetector: Split into {scene_count} scenes.")
+
+        return (scene_batches, scene_count, cut_indices)
